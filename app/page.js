@@ -145,6 +145,13 @@ export default function AdminPage() {
     showToast('Anwesenheit manuell eingetragen')
   }
 
+  const deleteCheckin = async (companyId, date) => {
+    if (!confirm('Anwesenheit für diesen Tag entfernen?')) return
+    await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, date, action: 'delete' }) })
+    refresh()
+    showToast('Anwesenheit entfernt')
+  }
+
   const resetData = async (type) => {
     if (!confirm(type === 'all' ? 'ALLE Daten löschen (Betriebe + Check-ins)?' : 'Alle Check-ins löschen?')) return
     await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) })
@@ -193,7 +200,7 @@ export default function AdminPage() {
           {CLASSES.map(c => <button key={c} onClick={() => setClassFilter(c)} style={{ ...S.filterBtn, ...(classFilter === c ? S.filterActive : {}) }}>{c}</button>)}
         </div>
 
-        {view === 'dashboard' && <Dashboard {...{ companies: filtered, allCompanies: companies, checkins, schoolDays, manualCheckin, refresh }} />}
+        {view === 'dashboard' && <Dashboard {...{ companies: filtered, allCompanies: companies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }} />}
         {view === 'companies' && <Companies {...{ companies, apiCompanies, showToast }} />}
         {view === 'export' && <ExportView {...{ companies: filtered, checkins, schoolDays }} />}
         {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, resetData }} />}
@@ -203,7 +210,7 @@ export default function AdminPage() {
 }
 
 // ─── DASHBOARD ───
-function Dashboard({ companies, allCompanies, checkins, schoolDays, manualCheckin, refresh }) {
+function Dashboard({ companies, allCompanies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }) {
   const [expandedCompany, setExpandedCompany] = useState(null)
   const [showSchoolDays, setShowSchoolDays] = useState(false)
   const scrollRef = useRef(null)
@@ -322,9 +329,10 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
                           return (
                             <td key={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: 'pointer', position: 'relative' }}
                               onClick={() => {
-                                if (!ci) manualCheckin(co.id, d, true)
+                                if (ci) deleteCheckin(co.id, d)
+                                else manualCheckin(co.id, d, true)
                               }}
-                              title={ci ? `${ci.time}${ci.manual ? ' (manuell)' : ''}` : 'Klicken für manuellen Eintrag'}>
+                              title={ci ? `${ci.time}${ci.manual ? ' (manuell)' : ''} – Klicken zum Entfernen` : 'Klicken für manuellen Eintrag'}>
                               {ci ? (
                                 <span style={{ ...S.badge, background: ci.nfcVerified ? T.successDim : T.warningDim, color: ci.nfcVerified ? T.success : T.warning, fontSize: 11 }}>
                                   {ci.time === 'manuell' ? '✎' : ci.time} {ci.nfcVerified ? '✓' : '⚠'}
