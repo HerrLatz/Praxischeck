@@ -1,10 +1,22 @@
-import redis from '../../../lib/redis'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
+
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN,
+})
 
 export async function POST(req) {
   try {
-    const { companyId, date, nfcVerified } = await req.json()
+    const { companyId, date, nfcVerified, action } = await req.json()
     const checkins = await redis.get('checkins') || []
+
+    if (action === 'delete') {
+      const filtered = checkins.filter(c => !(c.companyId === companyId && c.date === date))
+      await redis.set('checkins', filtered)
+      return NextResponse.json({ status: 'deleted' })
+    }
+
     const existingIndex = checkins.findIndex(c => c.companyId === companyId && c.date === date)
 
     if (existingIndex !== -1) {
