@@ -67,15 +67,14 @@ function isInHoliday(dateStr) {
 }
 
 function isHolidayWeek(mondayStr, saturdayStr) {
-  // Woche gilt als Ferienwoche wenn Mo-Fr komplett in den Ferien liegt
-  const dates = []
+  // Woche gilt als Ferienwoche wenn alle Wochentage Mo-Fr in den Ferien liegen
   const m = new Date(mondayStr)
   for (let i = 0; i < 5; i++) {
     const d = new Date(m)
     d.setDate(m.getDate() + i)
-    dates.push(d.toISOString().split('T')[0])
+    if (!isInHoliday(d.toISOString().split('T')[0])) return false
   }
-  return dates.every(d => isInHoliday(d))
+  return true
 }
 
 function getHolidayName(dateStr) {
@@ -201,7 +200,12 @@ export default function AdminPage() {
   }
 
   const resetData = async (type) => {
-    if (!confirm(type === 'all' ? 'ALLE Daten löschen (Betriebe + Check-ins)?' : 'Alle Check-ins löschen?')) return
+    const pw = prompt(type === 'all' ? 'ALLE Daten löschen – bitte Passwort eingeben:' : 'Alle Check-ins löschen – bitte Passwort eingeben:')
+    if (!pw) return
+    const authCheck = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: pw }) })
+    const authData = await authCheck.json()
+    if (!authData.ok) { alert('Falsches Passwort!'); return }
+    if (!confirm(type === 'all' ? 'Wirklich ALLE Daten unwiderruflich löschen?' : 'Wirklich alle Check-ins unwiderruflich löschen?')) return
     await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) })
     refresh()
     showToast(type === 'all' ? 'Alle Daten gelöscht' : 'Check-ins gelöscht')
@@ -261,6 +265,9 @@ export default function AdminPage() {
 function Dashboard({ companies, allCompanies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }) {
   const [expandedCompany, setExpandedCompany] = useState(null)
   const [showSchoolDays, setShowSchoolDays] = useState(false)
+  const [reportCompany, setReportCompany] = useState(null)
+  const [reportRange, setReportRange] = useState('this_week')
+  const [reportLoading, setReportLoading] = useState(false)
   const scrollRef = useRef(null)
   const todayStr = new Date().toISOString().split('T')[0]
   const currentMonday = getMonday(new Date())
@@ -303,8 +310,89 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
 
   const isSaturday = (dateStr) => new Date(dateStr).getDay() === 6
 
+  const generateReport = async () => {
+    setReportLoading(true)
+    const now = new Date()
+    let startDate, endDate
+    const mon = getMonday(now)
+
+    if (reportRange === 'this_week') {
+      startDate = mon.toISOString().split('T')[0]
+      const sat = new Date(mon); sat.setDate(mon.getDate() + 5)
+      endDate = sat.toISOString().split('T')[0]
+    } else if (reportRange === 'last_week') {
+      const lastMon = new Date(mon); lastMon.setDate(mon.getDate() - 7)
+      startDate = lastMon.toISOString().split('T')[0]
+      const lastSat = new Date(lastMon); lastSat.setDate(lastMon.getDate() + 5)
+      endDate = lastSat.toISOString().split('T')[0]
+    } else if (reportRange === '2_weeks') {
+      const twoWeeksAgo = new Date(mon); twoWeeksAgo.setDate(mon.getDate() - 7)
+      startDate = twoWeeksAgo.toISOString().split('T')[0]
+      const sat = new Date(mon); sat.setDate(mon.getDate() + 5)
+      endDate = sat.toISOString().split('T')[0]
+    } else if (reportRange === '4_weeks') {
+      const fourWeeksAgo = new Date(mon); fourWeeksAgo.setDate(mon.getDate() - 21)
+      startDate = fourWeeksAgo.toISOString().split('T')[0]
+      const sat = new Date(mon); sat.setDate(mon.getDate() + 5)
+      endDate = sat.toISOString().split('T')[0]
+    } else if (reportRange === 'all') {
+      startDate = PROJECT_START
+      const sat = new Date(mon); sat.setDate(mon.getDate() + 5)
+      endDate = sat.toISOString().split('T')[0]
+    }
+
+    try {
+      const res = await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: reportCompany.id, startDate, endDate }),
+      })
+      if (!res.ok) throw new Error('Report failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Fehlbericht_${reportCompany.code}.docx`
+      a.click()
+      URL.revokeObjectURL(url)
+      setReportCompany(null)
+    } catch (e) {
+      alert('Fehler beim Erstellen des Berichts: ' + e.message)
+    }
+    setReportLoading(false)
+  }
+
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
+      {/* Report Modal */}
+      {reportCompany && (
+        <div style={S.modal} onClick={() => setReportCompany(null)}>
+          <div style={S.modalContent} onClick={e => e.stopPropagation()}>
+            <h3 style={{ ...S.h2, fontSize: 16, marginBottom: 4 }}>Fehlbericht erstellen</h3>
+            <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>{reportCompany.code} \u2013 {reportCompany.name}</p>
+            <div style={{ marginBottom: 16 }}>
+              <label style={S.label}>Zeitraum</label>
+              <select style={S.input} value={reportRange} onChange={e => setReportRange(e.target.value)}>
+                <option value="this_week">Diese Woche</option>
+                <option value="last_week">Letzte Woche</option>
+                <option value="2_weeks">Letzte 2 Wochen</option>
+                <option value="4_weeks">Letzte 4 Wochen</option>
+                <option value="all">Gesamter Zeitraum</option>
+              </select>
+            </div>
+            <p style={{ color: T.textDim, fontSize: 12, marginBottom: 16, lineHeight: 1.5 }}>
+              Es wird eine Word-Datei erstellt mit allen Praktikumstagen, an denen kein Check-in (QR oder NFC) registriert wurde. Der Betrieb kann die Anwesenheit per Unterschrift best\u00e4tigen.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={{ ...S.btnPrimary, flex: 1, opacity: reportLoading ? 0.5 : 1 }} onClick={generateReport} disabled={reportLoading}>
+                {reportLoading ? 'Wird erstellt...' : '\u2193 Word-Datei erstellen'}
+              </button>
+              <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setReportCompany(null)}>Abbrechen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="stats-grid" style={S.statsGrid}>
         <div className="stat-card" style={{ ...S.card, padding: 20 }}>
@@ -388,7 +476,10 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
                     {companies.map(co => (
                       <tr key={co.id}>
                         {wi === 0 && <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", position: 'sticky', left: 0, background: T.surface, zIndex: 1, cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.code}</td>}
-                        {wi === 0 && <td style={{ ...S.td, color: T.text, position: 'sticky', left: 60, background: T.surface, zIndex: 1, cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{expandedCompany === co.id ? '▲' : '▼'}</span></td>}
+                        {wi === 0 && <td style={{ ...S.td, color: T.text, position: 'sticky', left: 60, background: T.surface, zIndex: 1 }}>
+                          <span style={{ cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{expandedCompany === co.id ? '\u25B2' : '\u25BC'}</span></span>
+                          <button onClick={(e) => { e.stopPropagation(); setReportCompany(co) }} style={{ ...S.btnSmall, marginLeft: 8, padding: '2px 6px', fontSize: 10 }} title="Fehlbericht erstellen">{'\uD83D\uDCCB'}</button>
+                        </td>}
                         {wi !== 0 && <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.code}</td>}
                         {wi !== 0 && <td style={{ ...S.td, color: T.text, cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{expandedCompany === co.id ? '▲' : '▼'}</span></td>}
                         {visibleDates.map(d => {
