@@ -318,8 +318,8 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
                       <tr key={co.id}>
                         {wi === 0 && <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", position: 'sticky', left: 0, background: T.surface, zIndex: 1, cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.code}</td>}
                         {wi === 0 && <td style={{ ...S.td, color: T.text, position: 'sticky', left: 60, background: T.surface, zIndex: 1, cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{expandedCompany === co.id ? '▲' : '▼'}</span></td>}
-                        {wi !== 0 && <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace" }}>{co.code}</td>}
-                        {wi !== 0 && <td style={{ ...S.td, color: T.text }}>{co.name}</td>}
+                        {wi !== 0 && <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.code}</td>}
+                        {wi !== 0 && <td style={{ ...S.td, color: T.text, cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{expandedCompany === co.id ? '▲' : '▼'}</span></td>}
                         {visibleDates.map(d => {
                           const day = new Date(d).getDay()
                           const isSchool = schoolDays.includes(day)
