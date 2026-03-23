@@ -47,6 +47,54 @@ function getWeekDatesFromMonday(monday) {
   })
 }
 
+// NRW Schulferien - Datum (YYYY-MM-DD) Bereiche
+const NRW_FERIEN = [
+  ['2026-03-30', '2026-04-11'], // Osterferien 2026
+  ['2026-05-26', '2026-05-26'], // Pfingstferien 2026
+  ['2026-07-20', '2026-09-01'], // Sommerferien 2026
+  ['2026-10-17', '2026-10-31'], // Herbstferien 2026
+  ['2026-12-23', '2027-01-06'], // Weihnachtsferien 2026/27
+  ['2027-03-29', '2027-04-12'], // Osterferien 2027
+  ['2027-05-25', '2027-05-25'], // Pfingstferien 2027
+  ['2027-07-05', '2027-08-17'], // Sommerferien 2027
+]
+
+// Projektstart: 23.03.2026
+const PROJECT_START = '2026-03-23'
+
+function isInHoliday(dateStr) {
+  return NRW_FERIEN.some(([start, end]) => dateStr >= start && dateStr <= end)
+}
+
+function isHolidayWeek(mondayStr, saturdayStr) {
+  // Woche gilt als Ferienwoche wenn Mo-Fr komplett in den Ferien liegt
+  const dates = []
+  const m = new Date(mondayStr)
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(m)
+    d.setDate(m.getDate() + i)
+    dates.push(d.toISOString().split('T')[0])
+  }
+  return dates.every(d => isInHoliday(d))
+}
+
+function getHolidayName(dateStr) {
+  const labels = [
+    ['2026-03-30', '2026-04-11', 'Osterferien'],
+    ['2026-05-26', '2026-05-26', 'Pfingstferien'],
+    ['2026-07-20', '2026-09-01', 'Sommerferien'],
+    ['2026-10-17', '2026-10-31', 'Herbstferien'],
+    ['2026-12-23', '2027-01-06', 'Weihnachtsferien'],
+    ['2027-03-29', '2027-04-12', 'Osterferien'],
+    ['2027-05-25', '2027-05-25', 'Pfingstferien'],
+    ['2027-07-05', '2027-08-17', 'Sommerferien'],
+  ]
+  for (const [s, e, name] of labels) {
+    if (dateStr >= s && dateStr <= e) return name
+  }
+  return 'Ferien'
+}
+
 function formatDate(d) {
   return `${d.split('-')[2]}.${d.split('-')[1]}.`
 }
@@ -217,12 +265,20 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
   const todayStr = new Date().toISOString().split('T')[0]
   const currentMonday = getMonday(new Date())
 
-  // Generate weeks: 10 past + current + 2 future
+  // Generate weeks: from project start, skip holiday weeks
   const weeks = []
-  for (let i = -10; i <= 2; i++) {
-    const m = new Date(currentMonday)
+  const projectMonday = getMonday(new Date(PROJECT_START))
+  for (let i = 0; i < 52; i++) {
+    const m = new Date(projectMonday)
     m.setDate(m.getDate() + i * 7)
-    weeks.push({ monday: new Date(m), dates: getWeekDatesFromMonday(m), label: getWeekLabel(m) })
+    const dates = getWeekDatesFromMonday(m)
+    const mondayStr = dates[0]
+    const saturdayStr = dates[5]
+    if (isHolidayWeek(mondayStr, saturdayStr)) {
+      weeks.push({ monday: new Date(m), dates, label: getWeekLabel(m), holiday: getHolidayName(mondayStr) })
+    } else {
+      weeks.push({ monday: new Date(m), dates, label: getWeekLabel(m), holiday: null })
+    }
   }
 
   // Scroll to current week on mount
@@ -281,6 +337,21 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
         <div ref={scrollRef} className="week-scroll" style={{ gap: 0 }}>
           {weeks.map((week, wi) => {
             const isCurrent = week.dates.includes(todayStr)
+
+            // Holiday week: show as compact indicator
+            if (week.holiday) {
+              return (
+                <div key={wi} className="week-col" style={{ borderRight: `1px solid ${T.border}`, minWidth: 120, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ padding: '8px 12px', background: '#1a1520', borderBottom: `2px solid ${T.border}`, fontFamily: "'Space Mono', monospace", fontSize: 12, color: T.textDim, fontWeight: 600, textAlign: 'center' }}>
+                    {week.label}
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 12px', color: T.textDim, fontSize: 12, textAlign: 'center' }}>
+                    🏖 {week.holiday}
+                  </div>
+                </div>
+              )
+            }
+
             const visibleDates = week.dates.filter(d => {
               const day = new Date(d).getDay()
               if (day === 0) return false
