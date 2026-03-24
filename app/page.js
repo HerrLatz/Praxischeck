@@ -24,6 +24,7 @@ function qrUrl(text, size = 200) {
 
 function getMonday(d) {
   const date = new Date(d)
+  date.setHours(12, 0, 0, 0) // avoid timezone midnight issues
   const day = date.getDay() || 7
   date.setDate(date.getDate() - day + 1)
   return date
@@ -31,6 +32,7 @@ function getMonday(d) {
 
 function getWeekLabel(mondayDate) {
   const d = new Date(mondayDate)
+  d.setHours(12, 0, 0, 0)
   const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
   const day = t.getUTCDay() || 7
   t.setUTCDate(t.getUTCDate() + 4 - day)
@@ -40,10 +42,12 @@ function getWeekLabel(mondayDate) {
 }
 
 function getWeekDatesFromMonday(monday) {
+  const m = new Date(monday)
+  m.setHours(12, 0, 0, 0)
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    return d.toISOString().split('T')[0]
+    const d = new Date(m)
+    d.setDate(m.getDate() + i)
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
   })
 }
 
@@ -66,13 +70,14 @@ function isInHoliday(dateStr) {
   return NRW_FERIEN.some(([start, end]) => dateStr >= start && dateStr <= end)
 }
 
-function isHolidayWeek(mondayStr, saturdayStr) {
+function isHolidayWeek(mondayStr, sundayStr) {
   // Woche gilt als Ferienwoche wenn alle Wochentage Mo-Fr in den Ferien liegen
-  const m = new Date(mondayStr)
+  const m = new Date(mondayStr + 'T12:00:00')
   for (let i = 0; i < 5; i++) {
     const d = new Date(m)
     d.setDate(m.getDate() + i)
-    if (!isInHoliday(d.toISOString().split('T')[0])) return false
+    const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+    if (!isInHoliday(ds)) return false
   }
   return true
 }
