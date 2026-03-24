@@ -137,7 +137,7 @@ function LoginScreen({ onLogin }) {
   const submit = async () => {
     const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) })
     const data = await r.json()
-    if (data.ok) { localStorage.setItem('pk-auth', data.token); onLogin() }
+    if (data.ok) { onLogin(data) }
     else setError(true)
   }
 
@@ -145,9 +145,9 @@ function LoginScreen({ onLogin }) {
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans', sans-serif" }}>
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: '48px 36px', maxWidth: 380, width: '100%' }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: `linear-gradient(135deg, ${T.accent}, ${T.accentDim})`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: T.bg, marginBottom: 12 }}>✓</div>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: `linear-gradient(135deg, ${T.accent}, ${T.accentDim})`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: T.bg, marginBottom: 12 }}>{"✓"}</div>
           <h1 style={{ fontFamily: "'Space Mono', monospace", fontSize: 22, color: T.text }}>PraxisCheck</h1>
-          <p style={{ color: T.textDim, fontSize: 13, marginTop: 4 }}>Admin-Zugang</p>
+          <p style={{ color: T.textDim, fontSize: 13, marginTop: 4 }}>Anmeldung</p>
         </div>
         <div style={{ marginBottom: 14 }}>
           <input style={S.input} placeholder="Benutzername" value={user} onChange={e => { setUser(e.target.value); setError(false) }} onKeyDown={e => e.key === 'Enter' && submit()} />
@@ -165,6 +165,9 @@ function LoginScreen({ onLogin }) {
 // ─── MAIN ───
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false)
+  const [userRole, setUserRole] = useState(null) // 'admin' or 'lehrer'
+  const [userKlasse, setUserKlasse] = useState(null) // null for admin, 'BPA' etc for lehrer
+  const [userName, setUserName] = useState('')
   const [view, setView] = useState('dashboard')
   const [companies, setCompanies] = useState([])
   const [checkins, setCheckins] = useState([])
@@ -175,7 +178,29 @@ export default function AdminPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
-  useEffect(() => { if (localStorage.getItem('pk-auth')) setAuthed(true) }, [])
+  useEffect(() => {
+    const saved = localStorage.getItem('pk-auth-data')
+    if (saved) {
+      try {
+        const data = JSON.parse(saved)
+        setAuthed(true)
+        setUserRole(data.role)
+        setUserKlasse(data.klasse)
+        setUserName(data.username)
+        if (data.klasse) setClassFilter(data.klasse)
+      } catch { localStorage.removeItem('pk-auth-data') }
+    }
+  }, [])
+
+  const handleLogin = (data) => {
+    localStorage.setItem('pk-auth', data.token)
+    localStorage.setItem('pk-auth-data', JSON.stringify({ role: data.role, klasse: data.klasse, username: data.username }))
+    setAuthed(true)
+    setUserRole(data.role)
+    setUserKlasse(data.klasse)
+    setUserName(data.username)
+    if (data.klasse) setClassFilter(data.klasse)
+  }
 
   const refresh = useCallback(async () => {
     const [co, ci] = await Promise.all([fetch('/api/companies').then(r => r.json()), fetch('/api/checkins').then(r => r.json())])
@@ -217,9 +242,9 @@ export default function AdminPage() {
     showToast(type === 'all' ? 'Alle Daten gelöscht' : 'Check-ins gelöscht')
   }
 
-  const logout = () => { localStorage.removeItem('pk-auth'); setAuthed(false) }
+  const logout = () => { localStorage.removeItem('pk-auth'); localStorage.removeItem('pk-auth-data'); setAuthed(false); setUserRole(null); setUserKlasse(null); setUserName('') }
 
-  if (!authed) return <><style>{CSS}</style><LoginScreen onLogin={() => setAuthed(true)} /></>
+  if (!authed) return <><style>{CSS}</style><LoginScreen onLogin={handleLogin} /></>
   if (loading) return <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: T.bg }}><style>{CSS}</style><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style><div style={{ width: 32, height: 32, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><p style={{ color: T.textMuted, marginTop: 16, fontFamily: 'DM Sans' }}>Lade Daten...</p></div>
 
   const filtered = classFilter ? companies.filter(c => c.klasse === classFilter) : companies
@@ -232,11 +257,14 @@ export default function AdminPage() {
 
       <nav className="sidebar" style={S.sidebar}>
         <div className="logo-area" style={S.logo}>
-          <div style={S.logoIcon}>✓</div>
-          <div><div style={S.logoText}>PraxisCheck</div><div style={S.logoSub}>Admin</div></div>
+          <div style={S.logoIcon}>{"✓"}</div>
+          <div><div style={S.logoText}>PraxisCheck</div><div style={S.logoSub}>{userName || 'Admin'}</div></div>
         </div>
         <div className="nav-section" style={S.navSection}>
-          {[['dashboard', '◉', 'Dashboard'], ['companies', '◆', 'Betriebe'], ['export', '↓', 'CSV-Export'], ['settings', '⚙', 'Einstellungen']].map(([k, i, l]) => (
+          {[['dashboard', '◉', 'Dashboard'], ['companies', '◆', 'Betriebe'], ['export', '↓', 'CSV-Export'], ['settings', '⚙', 'Einstellungen']].filter(([k]) => {
+            if (userRole === 'lehrer' && k === 'settings') return false
+            return true
+          }).map(([k, i, l]) => (
             <button key={k} onClick={() => setView(k)} style={{ ...S.navItem, ...(view === k ? S.navActive : {}) }}><span style={S.navIcon}>{i}</span>{l}</button>
           ))}
         </div>
@@ -244,7 +272,7 @@ export default function AdminPage() {
         <div className="stats-info" style={{ padding: '0 20px', fontSize: 12, color: T.textDim }}>{companies.length} Betriebe · {checkins.length} Check-ins</div>
         <div className="legend" style={{ marginTop: 'auto', padding: '16px 20px' }}>
           <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.8 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.success, marginRight: 6, verticalAlign: 'middle' }} />NFC ✓
+            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.success, marginRight: 6, verticalAlign: 'middle' }} />NFC {"✓"}
             <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.warning, marginRight: 6, marginLeft: 10, verticalAlign: 'middle' }} />QR
             <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.danger, marginRight: 6, marginLeft: 10, verticalAlign: 'middle' }} />Fehlt
           </div>
@@ -253,15 +281,23 @@ export default function AdminPage() {
       </nav>
 
       <main className="main-content" style={S.main}>
-        {/* Class filter bar */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
-          <button onClick={() => setClassFilter('')} style={{ ...S.filterBtn, ...(classFilter === '' ? S.filterActive : {}) }}>Alle</button>
-          {CLASSES.map(c => <button key={c} onClick={() => setClassFilter(c)} style={{ ...S.filterBtn, ...(classFilter === c ? S.filterActive : {}) }}>{c}</button>)}
-        </div>
+        {/* Class filter bar - only admin can switch classes */}
+        {userRole === 'admin' && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
+            <button onClick={() => setClassFilter('')} style={{ ...S.filterBtn, ...(classFilter === '' ? S.filterActive : {}) }}>Alle</button>
+            {CLASSES.map(c => <button key={c} onClick={() => setClassFilter(c)} style={{ ...S.filterBtn, ...(classFilter === c ? S.filterActive : {}) }}>{c}</button>)}
+          </div>
+        )}
+        {userRole === 'lehrer' && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
+            <span style={{ ...S.filterBtn, ...S.filterActive, cursor: 'default' }}>{userKlasse}</span>
+          </div>
+        )}
 
         {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }} />}
-        {view === 'companies' && <Companies {...{ companies, apiCompanies, showToast }} />}
+        {view === 'companies' && <Companies {...{ companies: userRole === 'lehrer' ? companies.filter(c => c.klasse === userKlasse) : companies, apiCompanies, showToast, userRole, userKlasse }} />}
         {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, schoolDays }} />}
         {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, resetData }} />}
 
@@ -609,9 +645,9 @@ function CompanyStats({ companyId, companies, checkins, schoolDays }) {
 }
 
 // ─── COMPANIES ───
-function Companies({ companies, apiCompanies, showToast }) {
+function Companies({ companies, apiCompanies, showToast, userRole, userKlasse }) {
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', code: '', klasse: '' })
+  const [form, setForm] = useState({ name: '', code: '', klasse: userKlasse || '' })
   const [editId, setEditId] = useState(null)
   const [showQR, setShowQR] = useState(null)
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
@@ -621,16 +657,17 @@ function Companies({ companies, apiCompanies, showToast }) {
   const submit = async () => {
     if (!form.name.trim()) return
     const code = form.code.trim() || nextCode()
-    if (editId) { await apiCompanies('update', { ...form, code, id: editId }); showToast('Betrieb aktualisiert') }
-    else { await apiCompanies('add', { id: Date.now().toString(), ...form, code }); showToast('Betrieb hinzugefügt') }
-    setForm({ name: '', code: '', klasse: '' }); setShowForm(false); setEditId(null)
+    const klasse = userRole === 'lehrer' ? userKlasse : form.klasse
+    if (editId) { await apiCompanies('update', { ...form, klasse, code, id: editId }); showToast('Betrieb aktualisiert') }
+    else { await apiCompanies('add', { id: Date.now().toString(), ...form, klasse, code }); showToast('Betrieb hinzugefügt') }
+    setForm({ name: '', code: '', klasse: userKlasse || '' }); setShowForm(false); setEditId(null)
   }
 
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
       <div style={S.header}>
-        <div><h1 style={S.h1}>Betriebe</h1></div>
-        <button style={S.btnPrimary} onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', code: nextCode(), klasse: '' }) }}>+ Hinzufügen</button>
+        <div><h1 style={S.h1}>Betriebe{userRole === 'lehrer' ? ` – ${userKlasse}` : ''}</h1></div>
+        <button style={S.btnPrimary} onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', code: nextCode(), klasse: userKlasse || '' }) }}>+ Hinzufügen</button>
       </div>
 
       {showForm && (
@@ -638,12 +675,17 @@ function Companies({ companies, apiCompanies, showToast }) {
           <div style={S.formGrid}>
             <div><label style={S.label}>Betriebsname *</label><input style={S.input} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="z.B. Netto Kleve" /></div>
             <div><label style={S.label}>Kürzel</label><input style={S.input} value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
-            <div><label style={S.label}>Klasse</label>
-              <select style={S.input} value={form.klasse} onChange={e => setForm({ ...form, klasse: e.target.value })}>
-                <option value="">– Klasse wählen –</option>
-                {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+            {userRole === 'admin' && (
+              <div><label style={S.label}>Klasse</label>
+                <select style={S.input} value={form.klasse} onChange={e => setForm({ ...form, klasse: e.target.value })}>
+                  <option value="">– Klasse wählen –</option>
+                  {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+            {userRole === 'lehrer' && (
+              <div><label style={S.label}>Klasse</label><input style={S.input} value={userKlasse} disabled /></div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
             <button style={S.btnPrimary} onClick={submit}>{editId ? 'Speichern' : 'Hinzufügen'}</button>
