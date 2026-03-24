@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 const CLASSES = ['BPA', 'BPB', 'BPC', 'BPD', 'BPE']
@@ -217,6 +217,9 @@ export default function AdminPage() {
   if (loading) return <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: T.bg }}><style>{CSS}</style><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style><div style={{ width: 32, height: 32, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><p style={{ color: T.textMuted, marginTop: 16, fontFamily: 'DM Sans' }}>Lade Daten...</p></div>
 
   const filtered = classFilter ? companies.filter(c => c.klasse === classFilter) : companies
+  const [showArchived, setShowArchived] = useState(false)
+  const activeCompanies = filtered.filter(c => !c.archived)
+  const archivedCompanies = filtered.filter(c => c.archived)
 
   return (
     <div className="app-layout" style={S.app}><style>{CSS}</style>
@@ -252,10 +255,19 @@ export default function AdminPage() {
           {CLASSES.map(c => <button key={c} onClick={() => setClassFilter(c)} style={{ ...S.filterBtn, ...(classFilter === c ? S.filterActive : {}) }}>{c}</button>)}
         </div>
 
-        {view === 'dashboard' && <Dashboard {...{ companies: filtered, allCompanies: companies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }} />}
+        {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }} />}
         {view === 'companies' && <Companies {...{ companies, apiCompanies, showToast }} />}
-        {view === 'export' && <ExportView {...{ companies: filtered, checkins, schoolDays }} />}
+        {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, schoolDays }} />}
         {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, resetData }} />}
+
+        {/* Archive toggle */}
+        {archivedCompanies.length > 0 && (view === 'dashboard' || view === 'export') && (
+          <div style={{ marginTop: 8 }}>
+            <button style={{ ...S.btnSmall, color: showArchived ? T.accent : T.textDim }} onClick={() => setShowArchived(!showArchived)}>
+              {showArchived ? `Archiv ausblenden (${archivedCompanies.length})` : `Archiv anzeigen (${archivedCompanies.length})`}
+            </button>
+          </div>
+        )}
       </main>
     </div>
   )
@@ -268,33 +280,29 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
   const [reportCompany, setReportCompany] = useState(null)
   const [reportRange, setReportRange] = useState('this_week')
   const [reportLoading, setReportLoading] = useState(false)
-  const scrollRef = useRef(null)
+  const [weekOffset, setWeekOffset] = useState(0) // 0 = current week, -1 = last week, etc.
   const todayStr = new Date().toISOString().split('T')[0]
   const currentMonday = getMonday(new Date())
 
-  // Generate weeks: from project start, skip holiday weeks
-  const weeks = []
+  // Generate all weeks from project start
+  const allWeeks = []
   const projectMonday = getMonday(new Date(PROJECT_START))
   for (let i = 0; i < 52; i++) {
     const m = new Date(projectMonday)
     m.setDate(m.getDate() + i * 7)
     const dates = getWeekDatesFromMonday(m)
     const mondayStr = dates[0]
-    const saturdayStr = dates[5]
-    if (isHolidayWeek(mondayStr, saturdayStr)) {
-      weeks.push({ monday: new Date(m), dates, label: getWeekLabel(m), holiday: getHolidayName(mondayStr) })
+    if (isHolidayWeek(mondayStr, dates[5])) {
+      allWeeks.push({ monday: new Date(m), dates, label: getWeekLabel(m), holiday: getHolidayName(mondayStr) })
     } else {
-      weeks.push({ monday: new Date(m), dates, label: getWeekLabel(m), holiday: null })
+      allWeeks.push({ monday: new Date(m), dates, label: getWeekLabel(m), holiday: null })
     }
   }
 
-  // Scroll to current week on mount
-  useEffect(() => {
-    if (scrollRef.current) {
-      const currentEl = scrollRef.current.querySelector('[data-current="true"]')
-      if (currentEl) currentEl.scrollIntoView({ inline: 'start', behavior: 'auto' })
-    }
-  }, [])
+  // Find current week index
+  const currentWeekIndex = allWeeks.findIndex(w => w.dates.includes(todayStr))
+  const selectedIndex = Math.max(0, Math.min(allWeeks.length - 1, (currentWeekIndex >= 0 ? currentWeekIndex : 0) + weekOffset))
+  const selectedWeek = allWeeks[selectedIndex]
 
   // Today stats
   const todayCI = checkins.filter(c => c.date === todayStr)
@@ -412,107 +420,95 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
         </div>
       </div>
 
-      {/* School days toggle */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      {/* Week navigation */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={S.h2}>Wochenübersicht</h2>
-        <button style={S.btnSmall} onClick={() => setShowSchoolDays(!showSchoolDays)}>
-          {showSchoolDays ? 'Schultage ausblenden' : 'Schultage einblenden'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button style={S.btnSmall} onClick={() => setShowSchoolDays(!showSchoolDays)}>
+            {showSchoolDays ? 'Schultage ausblenden' : 'Schultage einblenden'}
+          </button>
+          <button style={{ ...S.btnSmall, fontSize: 16, padding: '4px 12px' }} onClick={() => setWeekOffset(o => Math.max(o - 1, -(currentWeekIndex >= 0 ? currentWeekIndex : 0)))}>{'\u25C0'}</button>
+          <button style={{ ...S.btnSmall, color: weekOffset === 0 ? T.accent : T.textMuted, borderColor: weekOffset === 0 ? T.accent : T.border }} onClick={() => setWeekOffset(0)}>Heute</button>
+          <button style={{ ...S.btnSmall, fontSize: 16, padding: '4px 12px' }} onClick={() => setWeekOffset(o => Math.min(o + 1, allWeeks.length - 1 - (currentWeekIndex >= 0 ? currentWeekIndex : 0)))}>{'\u25B6'}</button>
+        </div>
       </div>
 
-      {/* Horizontal scrollable weeks */}
       <div style={S.card}>
-        <div ref={scrollRef} className="week-scroll" style={{ gap: 0 }}>
-          {weeks.map((week, wi) => {
-            const isCurrent = week.dates.includes(todayStr)
+        {/* Week header */}
+        <div style={{ padding: '10px 16px', background: weekOffset === 0 ? T.accentDim + '33' : 'transparent', borderBottom: `2px solid ${weekOffset === 0 ? T.accent : T.border}`, fontFamily: "'Space Mono', monospace", fontSize: 14, color: weekOffset === 0 ? T.accent : T.textDim, fontWeight: 600, textAlign: 'center' }}>
+          {selectedWeek?.holiday ? (
+            <span>{'\uD83C\uDFD6'} {selectedWeek.label} \u2013 {selectedWeek.holiday}</span>
+          ) : (
+            <span>{selectedWeek?.label} \u00B7 {formatDate(selectedWeek?.dates[0] || '')} \u2013 {formatDate(selectedWeek?.dates[5] || '')}</span>
+          )}
+        </div>
 
-            // Holiday week: show as compact indicator
-            if (week.holiday) {
-              return (
-                <div key={wi} className="week-col" style={{ borderRight: `1px solid ${T.border}`, minWidth: 120, display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ padding: '8px 12px', background: '#1a1520', borderBottom: `2px solid ${T.border}`, fontFamily: "'Space Mono', monospace", fontSize: 12, color: T.textDim, fontWeight: 600, textAlign: 'center' }}>
-                    {week.label}
-                  </div>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 12px', color: T.textDim, fontSize: 12, textAlign: 'center' }}>
-                    🏖 {week.holiday}
-                  </div>
-                </div>
-              )
-            }
-
-            const visibleDates = week.dates.filter(d => {
-              const day = new Date(d).getDay()
-              if (day === 0) return false
-              if (!showSchoolDays && schoolDays.includes(day)) return false
-              return true
-            })
-            return (
-              <div key={wi} className="week-col" data-current={isCurrent ? 'true' : 'false'} style={{ borderRight: `1px solid ${T.border}`, minWidth: visibleDates.length * 90 + 200 }}>
-                <div style={{ padding: '8px 12px', background: isCurrent ? T.accentDim + '33' : 'transparent', borderBottom: `2px solid ${isCurrent ? T.accent : T.border}`, fontFamily: "'Space Mono', monospace", fontSize: 13, color: isCurrent ? T.accent : T.textDim, fontWeight: 600 }}>
-                  {week.label} · {formatDate(week.dates[0])} – {formatDate(week.dates[5])}
-                </div>
-                <table style={{ ...S.table, marginBottom: 0 }}>
-                  <thead>
-                    <tr>
-                      {wi === 0 && <th style={{ ...S.th, minWidth: 60, position: 'sticky', left: 0, background: T.surface, zIndex: 2 }}>Kürzel</th>}
-                      {wi === 0 && <th style={{ ...S.th, minWidth: 130, position: 'sticky', left: 60, background: T.surface, zIndex: 2 }}>Betrieb</th>}
-                      {wi !== 0 && <th style={{ ...S.th, minWidth: 60 }}></th>}
-                      {wi !== 0 && <th style={{ ...S.th, minWidth: 130 }}></th>}
+        {selectedWeek && !selectedWeek.holiday && (() => {
+          const visibleDates = selectedWeek.dates.filter(d => {
+            const day = new Date(d).getDay()
+            if (day === 0) return false
+            if (!showSchoolDays && schoolDays.includes(day)) return false
+            return true
+          })
+          return (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ ...S.table, marginBottom: 0 }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...S.th, minWidth: 60 }}>Kürzel</th>
+                    <th style={{ ...S.th, minWidth: 130 }}>Betrieb</th>
+                    {visibleDates.map(d => {
+                      const day = new Date(d).getDay()
+                      const isSchool = schoolDays.includes(day)
+                      const isSat = day === 6
+                      return (
+                        <th key={d} style={{ ...S.th, textAlign: 'center', minWidth: 90, background: isSchool ? T.school : isSat ? '#1a1520' : 'transparent', color: d === todayStr ? T.accent : T.textDim }}>
+                          {WEEKDAYS[day]} {formatDate(d)}
+                          {isSchool && <div style={{ fontSize: 8, color: T.textDim }}>Schule</div>}
+                          {isSat && <div style={{ fontSize: 8, color: T.textDim }}>Sa</div>}
+                        </th>
+                      )
+                    })}
+                    <th style={{ ...S.th, width: 30 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {companies.map(co => (
+                    <tr key={co.id} style={{ height: 40 }}>
+                      <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", cursor: 'pointer', verticalAlign: 'middle' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.code}</td>
+                      <td style={{ ...S.td, color: T.text, cursor: 'pointer', verticalAlign: 'middle' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>
+                        {co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{expandedCompany === co.id ? '\u25B2' : '\u25BC'}</span>
+                      </td>
                       {visibleDates.map(d => {
                         const day = new Date(d).getDay()
                         const isSchool = schoolDays.includes(day)
                         const isSat = day === 6
+                        const ci = checkins.find(c => c.companyId === co.id && c.date === d)
+                        const bgCol = isSchool ? T.school : isSat ? '#1a1520' : 'transparent'
                         return (
-                          <th key={d} style={{ ...S.th, textAlign: 'center', minWidth: 80, background: isSchool ? T.school : isSat ? '#1a1520' : 'transparent', color: d === todayStr ? T.accent : T.textDim }}>
-                            {WEEKDAYS[day]} {formatDate(d)}
-                            {isSchool && <div style={{ fontSize: 8, color: T.textDim }}>Schule</div>}
-                            {isSat && <div style={{ fontSize: 8, color: T.textDim }}>Sa</div>}
-                          </th>
+                          <td key={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: 'pointer', verticalAlign: 'middle' }}
+                            onClick={() => { if (ci) deleteCheckin(co.id, d); else manualCheckin(co.id, d, true) }}
+                            title={ci ? `${ci.time}${ci.manual ? ' (manuell)' : ''} \u2013 Klicken zum Entfernen` : 'Klicken f\u00FCr manuellen Eintrag'}>
+                            {ci ? (
+                              <span style={{ ...S.badge, background: ci.nfcVerified ? T.successDim : T.warningDim, color: ci.nfcVerified ? T.success : T.warning, fontSize: 11 }}>
+                                {ci.time === 'manuell' ? '\u270E' : ci.time} {ci.nfcVerified ? '\u2713' : '\u26A0'}
+                              </span>
+                            ) : d <= todayStr && !isSchool && !isSat ? (
+                              <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 11 }}>{'\u2717'}</span>
+                            ) : <span style={{ color: T.textDim, fontSize: 11 }}>{'\u2013'}</span>}
+                          </td>
                         )
                       })}
+                      <td style={{ ...S.td, textAlign: 'center', verticalAlign: 'middle' }}>
+                        <button onClick={(e) => { e.stopPropagation(); setReportCompany(co) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 0, color: T.textDim }} title="Fehlbericht">{'\uD83D\uDCCB'}</button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {companies.map(co => (
-                      <tr key={co.id}>
-                        {wi === 0 && <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", position: 'sticky', left: 0, background: T.surface, zIndex: 1, cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.code}</td>}
-                        {wi === 0 && <td style={{ ...S.td, color: T.text, position: 'sticky', left: 60, background: T.surface, zIndex: 1 }}>
-                          <span style={{ cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{expandedCompany === co.id ? '\u25B2' : '\u25BC'}</span></span>
-                          <button onClick={(e) => { e.stopPropagation(); setReportCompany(co) }} style={{ ...S.btnSmall, marginLeft: 8, padding: '2px 6px', fontSize: 10 }} title="Fehlbericht erstellen">{'\uD83D\uDCCB'}</button>
-                        </td>}
-                        {wi !== 0 && <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.code}</td>}
-                        {wi !== 0 && <td style={{ ...S.td, color: T.text, cursor: 'pointer' }} onClick={() => setExpandedCompany(expandedCompany === co.id ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{expandedCompany === co.id ? '▲' : '▼'}</span></td>}
-                        {visibleDates.map(d => {
-                          const day = new Date(d).getDay()
-                          const isSchool = schoolDays.includes(day)
-                          const isSat = day === 6
-                          const ci = checkins.find(c => c.companyId === co.id && c.date === d)
-                          const bgCol = isSchool ? T.school : isSat ? '#1a1520' : 'transparent'
-                          return (
-                            <td key={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: 'pointer', position: 'relative' }}
-                              onClick={() => {
-                                if (ci) deleteCheckin(co.id, d)
-                                else manualCheckin(co.id, d, true)
-                              }}
-                              title={ci ? `${ci.time}${ci.manual ? ' (manuell)' : ''} – Klicken zum Entfernen` : 'Klicken für manuellen Eintrag'}>
-                              {ci ? (
-                                <span style={{ ...S.badge, background: ci.nfcVerified ? T.successDim : T.warningDim, color: ci.nfcVerified ? T.success : T.warning, fontSize: 11 }}>
-                                  {ci.time === 'manuell' ? '✎' : ci.time} {ci.nfcVerified ? '✓' : '⚠'}
-                                </span>
-                              ) : d <= todayStr && !isSchool && !isSat ? (
-                                <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 11 }}>✗</span>
-                              ) : <span style={{ color: T.textDim, fontSize: 11 }}>–</span>}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
-          })}
-        </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Expanded company stats */}
@@ -686,17 +682,19 @@ function Companies({ companies, apiCompanies, showToast }) {
       {companies.length === 0 ? <div style={S.card}><Empty text="Noch keine Betriebe." /></div> : (
         <div style={{ display: 'grid', gap: 10 }}>
           {companies.map(c => (
-            <div key={c.id} style={{ ...S.card, padding: 16 }}>
+            <div key={c.id} style={{ ...S.card, padding: 16, opacity: c.archived ? 0.5 : 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, fontWeight: 700, color: T.accent }}>{c.code}</span>
                   <span style={{ color: T.text, fontSize: 15 }}>{c.name}</span>
                   {c.klasse && <span style={{ ...S.badge, background: T.surfaceLight, color: T.textMuted, fontSize: 11 }}>{c.klasse}</span>}
+                  {c.archived && <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 10 }}>Archiviert</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button style={S.btnSmall} onClick={() => setShowQR(c)}>QR</button>
-                  <button style={S.btnSmall} onClick={() => { setForm({ name: c.name, code: c.code, klasse: c.klasse || '' }); setEditId(c.id); setShowForm(true) }}>✎</button>
-                  <button style={{ ...S.btnSmall, color: T.danger }} onClick={async () => { await apiCompanies('delete', null, c.id); showToast('Gelöscht') }}>✗</button>
+                  <button style={S.btnSmall} onClick={() => { setForm({ name: c.name, code: c.code, klasse: c.klasse || '' }); setEditId(c.id); setShowForm(true) }}>{'\u270E'}</button>
+                  <button style={{ ...S.btnSmall, color: c.archived ? T.success : T.warning }} onClick={async () => { await apiCompanies('update', { ...c, archived: !c.archived }); showToast(c.archived ? 'Betrieb wiederhergestellt' : 'Betrieb archiviert') }}>{c.archived ? '\u21A9' : '\uD83D\uDCE6'}</button>
+                  <button style={{ ...S.btnSmall, color: T.danger }} onClick={async () => { await apiCompanies('delete', null, c.id); showToast('Gel\u00F6scht') }}>{'\u2717'}</button>
                 </div>
               </div>
             </div>
