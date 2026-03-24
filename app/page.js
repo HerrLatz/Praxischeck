@@ -168,6 +168,7 @@ export default function AdminPage() {
   const [schoolDays, setSchoolDays] = useState(DEFAULT_SCHOOL_DAYS)
   const [classFilter, setClassFilter] = useState('')
   const [showSettings, setShowSettings] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => { if (localStorage.getItem('pk-auth')) setAuthed(true) }, [])
 
@@ -217,7 +218,6 @@ export default function AdminPage() {
   if (loading) return <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: T.bg }}><style>{CSS}</style><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style><div style={{ width: 32, height: 32, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><p style={{ color: T.textMuted, marginTop: 16, fontFamily: 'DM Sans' }}>Lade Daten...</p></div>
 
   const filtered = classFilter ? companies.filter(c => c.klasse === classFilter) : companies
-  const [showArchived, setShowArchived] = useState(false)
   const activeCompanies = filtered.filter(c => !c.archived)
   const archivedCompanies = filtered.filter(c => c.archived)
 
