@@ -15,7 +15,6 @@ export async function GET(request) {
     return NextResponse.json({ error: "code und name erforderlich" }, { status: 400 });
   }
 
-  // ── QR-Code als PNG-Buffer ──
   const qrUrl = `${baseUrl}/c/${code}`;
   const qrBuffer = await QRCode.toBuffer(qrUrl, {
     width: 400,
@@ -24,16 +23,33 @@ export async function GET(request) {
     color: { dark: "#0a3d5c", light: "#ffffff" },
   });
 
-  // ── Border-Definitionen ──
   const noBorder = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
-  const boxBorder = { style: BorderStyle.SINGLE, size: 18, color: "0a3d5c" };
+  const boxBorder = { style: BorderStyle.SINGLE, size: 24, color: "0a3d5c" };
+  const boxBorderBottom = { style: BorderStyle.SINGLE, size: 24, color: "0a3d5c" };
 
-  // ── Dokument ──
+  // Helper: cell with consistent borders (left+right always, top/bottom configurable)
+  function boxCell(children, { top = false, bottom = false, paddingTop = 100, paddingBottom = 100 } = {}) {
+    return new TableCell({
+      width: { size: 10466, type: WidthType.DXA },
+      borders: {
+        top: top ? boxBorder : noBorder,
+        bottom: bottom ? boxBorderBottom : noBorder,
+        left: boxBorder,
+        right: boxBorder,
+      },
+      children: [
+        new Paragraph({ spacing: { before: paddingTop }, children: [] }),
+        ...children,
+        new Paragraph({ spacing: { after: paddingBottom }, children: [] }),
+      ],
+    });
+  }
+
   const doc = new Document({
     sections: [{
       properties: {
         page: {
-          size: { width: 11906, height: 16838 }, // A4
+          size: { width: 11906, height: 16838 },
           margin: { top: 720, right: 720, bottom: 720, left: 720 },
         },
       },
@@ -62,16 +78,14 @@ export async function GET(request) {
           spacing: { after: 80 },
           children: [
             new TextRun({ text: "\u2714  ", size: 22, font: "Arial" }),
-            new TextRun({ text: "Immer", bold: true, size: 22, font: "Arial" }),
-            new TextRun({ text: " BEIDE Schritte machen (QR + NFC)", bold: true, size: 22, font: "Arial" }),
+            new TextRun({ text: "Immer BEIDE Schritte machen (QR + NFC)", bold: true, size: 22, font: "Arial" }),
           ],
         }),
         new Paragraph({
           spacing: { after: 360 },
           children: [
             new TextRun({ text: "\u2714  ", size: 22, font: "Arial" }),
-            new TextRun({ text: "Kein", bold: true, size: 22, font: "Arial" }),
-            new TextRun({ text: " Check-in = Fehltag!", bold: true, size: 22, font: "Arial" }),
+            new TextRun({ text: "Kein Check-in = Fehltag!", bold: true, size: 22, font: "Arial" }),
           ],
         }),
 
@@ -87,50 +101,40 @@ export async function GET(request) {
           width: { size: 10466, type: WidthType.DXA },
           columnWidths: [10466],
           rows: [
-            // Überschrift
-            new TableRow({ children: [new TableCell({
-              borders: { top: boxBorder, left: boxBorder, right: boxBorder, bottom: noBorder },
-              margins: { top: 200, bottom: 120, left: 300, right: 300 },
-              children: [new Paragraph({ children: [
+            new TableRow({ children: [boxCell([
+              new Paragraph({ indent: { left: 200 }, children: [
                 new TextRun({ text: "Schritt 1", bold: true, underline: {}, size: 36, font: "Arial" }),
                 new TextRun({ text: ": QR-Code scannen", size: 36, font: "Arial" }),
-              ]})],
-            })]},),
-            // Anweisung
-            new TableRow({ children: [new TableCell({
-              borders: { top: noBorder, left: boxBorder, right: boxBorder, bottom: noBorder },
-              margins: { top: 320, bottom: 120, left: 300, right: 300 },
-              children: [new Paragraph({
+              ]}),
+            ], { top: true, paddingTop: 150, paddingBottom: 50 })] }),
+
+            new TableRow({ children: [boxCell([
+              new Paragraph({
                 alignment: AlignmentType.CENTER,
                 children: [new TextRun({ text: "\u2193  Handy-Kamera auf diesen Code halten  \u2193", italics: true, size: 22, font: "Arial" })],
-              })],
-            })]},),
-            // QR-Code
-            new TableRow({ children: [new TableCell({
-              borders: { top: noBorder, left: boxBorder, right: boxBorder, bottom: noBorder },
-              margins: { top: 240, bottom: 240, left: 300, right: 300 },
-              verticalAlign: VerticalAlign.CENTER,
-              children: [new Paragraph({
+              }),
+            ], { paddingTop: 200, paddingBottom: 100 })] }),
+
+            new TableRow({ children: [boxCell([
+              new Paragraph({
                 alignment: AlignmentType.CENTER,
                 children: [new ImageRun({
                   data: qrBuffer,
                   transformation: { width: 260, height: 260 },
                   type: "png",
                 })],
-              })],
-            })]},),
-            // Bestätigung
-            new TableRow({ children: [new TableCell({
-              borders: { top: noBorder, left: boxBorder, right: boxBorder, bottom: boxBorder },
-              margins: { top: 120, bottom: 240, left: 300, right: 300 },
-              children: [new Paragraph({
+              }),
+            ], { paddingTop: 50, paddingBottom: 50 })] }),
+
+            new TableRow({ children: [boxCell([
+              new Paragraph({
                 alignment: AlignmentType.CENTER,
                 children: [
-                  new TextRun({ text: "\u2192  Link \u00f6ffnet sich automatisch  \u2192  ", size: 22, font: "Arial" }),
+                  new TextRun({ text: "\u2192  Link \u00F6ffnet sich automatisch  \u2192  ", size: 22, font: "Arial" }),
                   new TextRun({ text: "GELBER Haken = eingecheckt", bold: true, size: 22, font: "Arial" }),
                 ],
-              })],
-            })]},),
+              }),
+            ], { bottom: true, paddingTop: 50, paddingBottom: 200 })] }),
           ],
         }),
 
@@ -142,44 +146,35 @@ export async function GET(request) {
           width: { size: 10466, type: WidthType.DXA },
           columnWidths: [10466],
           rows: [
-            // Überschrift
-            new TableRow({ children: [new TableCell({
-              borders: { top: boxBorder, left: boxBorder, right: boxBorder, bottom: noBorder },
-              margins: { top: 200, bottom: 120, left: 300, right: 300 },
-              children: [new Paragraph({ children: [
+            new TableRow({ children: [boxCell([
+              new Paragraph({ indent: { left: 200 }, children: [
                 new TextRun({ text: "Schritt 2", bold: true, underline: {}, size: 36, font: "Arial" }),
                 new TextRun({ text: ": Handy an NFC-Tag halten", size: 36, font: "Arial" }),
-              ]})],
-            })]},),
-            // Anweisung
-            new TableRow({ children: [new TableCell({
-              borders: { top: noBorder, left: boxBorder, right: boxBorder, bottom: noBorder },
-              margins: { top: 320, bottom: 120, left: 300, right: 300 },
-              children: [new Paragraph({
+              ]}),
+            ], { top: true, paddingTop: 150, paddingBottom: 50 })] }),
+
+            new TableRow({ children: [boxCell([
+              new Paragraph({
                 alignment: AlignmentType.CENTER,
                 children: [new TextRun({ text: "\u2193  Handy HIER an den Aufkleber halten  \u2193", italics: true, size: 22, font: "Arial" })],
-              })],
-            })]},),
-            // NFC-Platzhalter (kleiner Kasten)
-            new TableRow({ children: [new TableCell({
-              borders: { top: noBorder, left: boxBorder, right: boxBorder, bottom: noBorder },
-              margins: { top: 200, bottom: 200, left: 300, right: 300 },
-              children: [
-                new Paragraph({ spacing: { before: 600, after: 600 }, alignment: AlignmentType.CENTER, children: [] }),
-              ],
-            })]},),
-            // Bestätigung
-            new TableRow({ children: [new TableCell({
-              borders: { top: noBorder, left: boxBorder, right: boxBorder, bottom: boxBorder },
-              margins: { top: 120, bottom: 240, left: 300, right: 300 },
-              children: [new Paragraph({
+              }),
+            ], { paddingTop: 200, paddingBottom: 100 })] }),
+
+            new TableRow({ children: [boxCell([
+              new Paragraph({ spacing: { before: 400, after: 400 }, alignment: AlignmentType.CENTER, children: [
+                new TextRun({ text: "(  NFC-Tag hier aufkleben  )", size: 24, font: "Arial", color: "999999" }),
+              ]}),
+            ], { paddingTop: 50, paddingBottom: 50 })] }),
+
+            new TableRow({ children: [boxCell([
+              new Paragraph({
                 alignment: AlignmentType.CENTER,
                 children: [
-                  new TextRun({ text: "\u2192  Link \u00f6ffnet sich automatisch  \u2192  ", size: 22, font: "Arial" }),
-                  new TextRun({ text: "GR\u00dcNER Haken = best\u00e4tigt!", bold: true, size: 22, font: "Arial" }),
+                  new TextRun({ text: "\u2192  Link \u00F6ffnet sich automatisch  \u2192  ", size: 22, font: "Arial" }),
+                  new TextRun({ text: "GR\u00DCNER Haken = best\u00E4tigt!", bold: true, size: 22, font: "Arial" }),
                 ],
-              })],
-            })]},),
+              }),
+            ], { bottom: true, paddingTop: 50, paddingBottom: 200 })] }),
           ],
         }),
 
@@ -193,7 +188,7 @@ export async function GET(request) {
     status: 200,
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename="PraxisCheck_${code}_${name.replace(/\s+/g, "_")}.docx"`,
+      "Content-Disposition": `attachment; filename="PraxisCheck_${code}_${name.replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_-]/g, "_")}.docx"`,
     },
   });
 }
