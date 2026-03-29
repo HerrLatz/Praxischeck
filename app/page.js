@@ -24,7 +24,7 @@ function qrUrl(text, size = 200) {
 
 function getMonday(d) {
   const date = new Date(d)
-  date.setHours(12, 0, 0, 0) // avoid timezone midnight issues
+  date.setHours(12, 0, 0, 0)
   const day = date.getDay() || 7
   date.setDate(date.getDate() - day + 1)
   return date
@@ -51,19 +51,17 @@ function getWeekDatesFromMonday(monday) {
   })
 }
 
-// NRW Schulferien - Datum (YYYY-MM-DD) Bereiche
 const NRW_FERIEN = [
-  ['2026-03-30', '2026-04-11'], // Osterferien 2026
-  ['2026-05-26', '2026-05-26'], // Pfingstferien 2026
-  ['2026-07-20', '2026-09-01'], // Sommerferien 2026
-  ['2026-10-17', '2026-10-31'], // Herbstferien 2026
-  ['2026-12-23', '2027-01-06'], // Weihnachtsferien 2026/27
-  ['2027-03-29', '2027-04-12'], // Osterferien 2027
-  ['2027-05-25', '2027-05-25'], // Pfingstferien 2027
-  ['2027-07-05', '2027-08-17'], // Sommerferien 2027
+  ['2026-03-30', '2026-04-11'],
+  ['2026-05-26', '2026-05-26'],
+  ['2026-07-20', '2026-09-01'],
+  ['2026-10-17', '2026-10-31'],
+  ['2026-12-23', '2027-01-06'],
+  ['2027-03-29', '2027-04-12'],
+  ['2027-05-25', '2027-05-25'],
+  ['2027-07-05', '2027-08-17'],
 ]
 
-// Projektstart: 23.03.2026
 const PROJECT_START = '2026-03-23'
 
 function isInHoliday(dateStr) {
@@ -71,7 +69,6 @@ function isInHoliday(dateStr) {
 }
 
 function isHolidayWeek(mondayStr, sundayStr) {
-  // Woche gilt als Ferienwoche wenn alle Wochentage Mo-Fr in den Ferien liegen
   const m = new Date(mondayStr + 'T12:00:00')
   for (let i = 0; i < 5; i++) {
     const d = new Date(m)
@@ -103,30 +100,7 @@ function formatDate(d) {
   return `${d.split('-')[2]}.${d.split('-')[1]}.`
 }
 
-const CSS = `
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:${T.bg};overflow-x:hidden}
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:${T.surface}}
-::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px}
-input:focus,select:focus{outline:none;border-color:${T.accent}!important;box-shadow:0 0 0 3px ${T.accent}22}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes slideIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
-@keyframes toastIn{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
-.week-scroll{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
-.week-col{scroll-snap-align:start;flex-shrink:0}
-@media(max-width:768px){
-  .app-layout{flex-direction:column!important}
-  .sidebar{width:100%!important;min-width:100%!important;height:auto!important;position:relative!important;flex-direction:row!important;padding:8px!important;overflow-x:auto!important}
-  .sidebar .logo-area,.sidebar .legend,.sidebar .stats-info,.sidebar .divider-line{display:none!important}
-  .sidebar .nav-section{flex-direction:row!important;gap:2px!important}
-  .sidebar .nav-section button{padding:8px 12px!important;font-size:12px!important;border-left:none!important;border-bottom:2px solid transparent!important;white-space:nowrap!important}
-  .main-content{padding:12px!important}
-  .stats-grid{grid-template-columns:repeat(2,1fr)!important;gap:8px!important}
-  .stat-card{padding:14px!important}
-  .stat-value{font-size:24px!important}
-}
-`
+const CSS = `*{box-sizing:border-box;margin:0;padding:0} body{background:${T.bg};overflow-x:hidden} ::-webkit-scrollbar{width:6px;height:6px} ::-webkit-scrollbar-track{background:${T.surface}} ::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px} input:focus,select:focus{outline:none;border-color:${T.accent}!important;box-shadow:0 0 0 3px ${T.accent}22} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}} @keyframes slideIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}} @keyframes toastIn{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}} .week-scroll{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:thin} .week-col{scroll-snap-align:start;flex-shrink:0} @media(max-width:768px){ .app-layout{flex-direction:column!important} .sidebar{width:100%!important;min-width:100%!important;height:auto!important;position:relative!important;flex-direction:row!important;padding:8px!important;overflow-x:auto!important} .sidebar .logo-area,.sidebar .legend,.sidebar .stats-info,.sidebar .divider-line{display:none!important} .sidebar .nav-section{flex-direction:row!important;gap:2px!important} .sidebar .nav-section button{padding:8px 12px!important;font-size:12px!important;border-left:none!important;border-bottom:2px solid transparent!important;white-space:nowrap!important} .main-content{padding:12px!important} .stats-grid{grid-template-columns:repeat(2,1fr)!important;gap:8px!important} .stat-card{padding:14px!important} .stat-value{font-size:24px!important} }`
 
 // ─── AUTH ───
 function LoginScreen({ onLogin }) {
@@ -165,8 +139,8 @@ function LoginScreen({ onLogin }) {
 // ─── MAIN ───
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false)
-  const [userRole, setUserRole] = useState(null) // 'admin' or 'lehrer'
-  const [userKlasse, setUserKlasse] = useState(null) // null for admin, 'BPA' etc for lehrer
+  const [userRole, setUserRole] = useState(null)
+  const [userKlasse, setUserKlasse] = useState(null)
   const [userName, setUserName] = useState('')
   const [view, setView] = useState('dashboard')
   const [companies, setCompanies] = useState([])
@@ -245,7 +219,7 @@ export default function AdminPage() {
   const logout = () => { localStorage.removeItem('pk-auth'); localStorage.removeItem('pk-auth-data'); setAuthed(false); setUserRole(null); setUserKlasse(null); setUserName('') }
 
   if (!authed) return <><style>{CSS}</style><LoginScreen onLogin={handleLogin} /></>
-  if (loading) return <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: T.bg }}><style>{CSS}</style><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style><div style={{ width: 32, height: 32, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><p style={{ color: T.textMuted, marginTop: 16, fontFamily: 'DM Sans' }}>Lade Daten...</p></div>
+  if (loading) return <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: T.bg }}><style>{CSS}</style><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style><div style={{ width: 32, height: 32, border: `3px solid ${T.border}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><p style={{ color: T.textMuted, marginTop: 16, fontFamily: 'DM Sans' }}>Lade Daten…</p></div>
 
   const filtered = classFilter ? companies.filter(c => c.klasse === classFilter) : companies
   const activeCompanies = filtered.filter(c => !c.archived)
@@ -281,7 +255,6 @@ export default function AdminPage() {
       </nav>
 
       <main className="main-content" style={S.main}>
-        {/* Class filter bar - only admin can switch classes */}
         {userRole === 'admin' && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
@@ -301,7 +274,6 @@ export default function AdminPage() {
         {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, schoolDays }} />}
         {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, resetData }} />}
 
-        {/* Archive toggle */}
         {archivedCompanies.length > 0 && (view === 'dashboard' || view === 'export') && (
           <div style={{ marginTop: 8 }}>
             <button style={{ ...S.btnSmall, color: showArchived ? T.accent : T.textDim }} onClick={() => setShowArchived(!showArchived)}>
@@ -325,7 +297,6 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
   const todayStr = new Date().toISOString().split('T')[0]
   const currentMonday = getMonday(new Date())
 
-  // Hidden days = school days + Saturday + Sunday
   const hiddenDays = [...schoolDays, 0, 6]
 
   const allWeeks = []
@@ -395,7 +366,6 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
 
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
-      {/* Report Modal */}
       {reportCompany && (
         <div style={S.modal} onClick={() => setReportCompany(null)}>
           <div style={S.modalContent} onClick={e => e.stopPropagation()}>
@@ -412,11 +382,11 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
               </select>
             </div>
             <p style={{ color: T.textDim, fontSize: 12, marginBottom: 16, lineHeight: 1.5 }}>
-              Word-Datei mit allen Praktikumstagen ohne Check-in. Der Betrieb kann die Anwesenheit per Unterschrift best{"ä"}tigen.
+              Word-Datei mit allen Praktikumstagen ohne Check-in. Der Betrieb kann die Anwesenheit per Unterschrift bestätigen.
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={{ ...S.btnPrimary, flex: 1, opacity: reportLoading ? 0.5 : 1 }} onClick={generateReport} disabled={reportLoading}>
-                {reportLoading ? 'Wird erstellt...' : 'Word-Datei erstellen'}
+                {reportLoading ? 'Wird erstellt…' : 'Word-Datei erstellen'}
               </button>
               <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setReportCompany(null)}>Abbrechen</button>
             </div>
@@ -424,7 +394,6 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
         </div>
       )}
 
-      {/* Stats */}
       <div className="stats-grid" style={S.statsGrid}>
         <div className="stat-card" style={{ ...S.card, padding: 20 }}>
           <div style={{ fontSize: 11, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Heute eingecheckt</div>
@@ -443,7 +412,6 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
         </div>
       </div>
 
-      {/* Week navigation */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={S.h2}>Wochenübersicht</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -457,7 +425,6 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
       </div>
 
       <div style={S.card}>
-        {/* Week header */}
         <div style={{ padding: '10px 16px', background: weekOffset === 0 ? T.accentDim + '33' : 'transparent', borderBottom: `2px solid ${weekOffset === 0 ? T.accent : T.border}`, fontFamily: "'Space Mono', monospace", fontSize: 14, color: weekOffset === 0 ? T.accent : T.text, fontWeight: 600, textAlign: 'center' }}>
           {selectedWeek?.holiday ? (
             <span>{"🏖"} {selectedWeek.label} – {selectedWeek.holiday}</span>
@@ -477,7 +444,7 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
               <table style={{ ...S.table, marginBottom: 0 }}>
                 <thead>
                   <tr>
-                    <th style={{ ...S.th, minWidth: 60 }}>K{"ü"}rzel</th>
+                    <th style={{ ...S.th, minWidth: 60 }}>Kürzel</th>
                     <th style={{ ...S.th, minWidth: 130 }}>Betrieb</th>
                     {visibleDates.map(d => {
                       const day = new Date(d).getDay()
@@ -552,138 +519,76 @@ function CompanyStats({ companyId, companies, checkins, schoolDays }) {
   const company = companies.find(c => c.id === companyId)
   if (!company) return null
 
-  const DEFAULT_PRACTICE = [1, 2, 5] // Mo, Di, Fr
-  const [practiceDays, setPracticeDays] = useState(DEFAULT_PRACTICE)
-  const [chartMiddleDays, setChartMiddleDays] = useState(DEFAULT_PRACTICE)
-
   const companyCheckins = checkins.filter(c => c.companyId === companyId).sort((a, b) => b.date.localeCompare(a.date))
+  const nfcCount = companyCheckins.filter(c => c.nfcVerified).length
+  const qrCount = companyCheckins.filter(c => !c.nfcVerified).length
   const total = companyCheckins.length
 
-  // ── LINKS: Anwesenheitsquote (Pie) ──
-  // Zähle nur Praktikumstage seit Projektstart bis heute
-  const todayStr = new Date().toISOString().split('T')[0]
-  let totalPracticeDays = 0
-  let attendedPracticeDays = 0
-  const startDate = new Date(PROJECT_START + 'T12:00:00')
-  const endDate = new Date()
-  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
-    if (ds > todayStr) break
-    if (isInHoliday(ds)) continue
-    if (practiceDays.includes(d.getDay())) {
-      totalPracticeDays++
-      if (companyCheckins.some(c => c.date === ds)) attendedPracticeDays++
-    }
-  }
-  const missedDays = totalPracticeDays - attendedPracticeDays
-  const attendancePercent = totalPracticeDays > 0 ? Math.round((attendedPracticeDays / totalPracticeDays) * 100) : 0
-
-  const pieData = [
-    { name: 'Anwesend', value: attendedPracticeDays },
-    { name: 'Gefehlt', value: missedDays },
-  ].filter(d => d.value > 0)
-
-  // ── MITTE: Anwesenheit pro Praktikumstag (Bar) ──
-  const dayStats = chartMiddleDays.map(day => ({
+  const dayStats = [1, 2, 3, 4, 5, 6].map(day => ({
     name: WEEKDAYS[day],
-    anwesend: companyCheckins.filter(c => new Date(c.date + 'T12:00:00').getDay() === day).length,
+    anwesend: companyCheckins.filter(c => new Date(c.date).getDay() === day).length,
+    isSchool: schoolDays.includes(day),
   }))
 
-  // ── RECHTS: Check-ins pro KW (Bar) ──
-  const weekCounts = []
+  const pieData = [
+    { name: 'NFC ✓', value: nfcCount },
+    { name: 'Nur QR', value: qrCount },
+  ].filter(d => d.value > 0)
+
+  const weekTrend = []
   const now = new Date()
   for (let i = 7; i >= 0; i--) {
     const m = getMonday(new Date(now.getTime() - i * 7 * 86400000))
     const dates = getWeekDatesFromMonday(m)
-    const count = companyCheckins.filter(c => dates.includes(c.date)).length
-    if (count > 0 || i <= 3) {
-      weekCounts.push({ name: getWeekLabel(m), tage: count })
-    }
+    const practiceDates = dates.filter(d => { const day = new Date(d).getDay(); return !schoolDays.includes(day) && day !== 0 && day !== 6 })
+    const count = companyCheckins.filter(c => practiceDates.includes(c.date)).length
+    weekTrend.push({ name: getWeekLabel(m), tage: count, max: practiceDates.length })
   }
-
-  const dayToggle = (days, setDays, day) => {
-    setDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort())
-  }
-
-  const dayBtnStyle = (days, day) => ({
-    padding: '2px 6px', borderRadius: 4, fontSize: 9, cursor: 'pointer', border: 'none',
-    background: days.includes(day) ? T.accentDim + '66' : T.surfaceLight,
-    color: days.includes(day) ? T.accent : T.textDim,
-    fontFamily: "'DM Sans', sans-serif",
-  })
 
   return (
     <div style={{ ...S.card, animation: 'fadeIn .3s ease', marginTop: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-        <h3 style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, color: T.accent }}>{company.code} {"·"} {company.name}</h3>
-        <span style={{ fontSize: 12, color: T.textDim }}>{total} Check-ins gesamt {"·"} {company.klasse || '–'}</span>
+        <h3 style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, color: T.accent }}>{company.code} · {company.name}</h3>
+        <span style={{ fontSize: 12, color: T.textDim }}>{total} Check-ins gesamt · {company.klasse || '–'}</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16 }}>
-
-        {/* ── LINKS: Anwesenheitsquote ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <div style={{ background: T.surfaceLight, borderRadius: 10, padding: 16 }}>
-          <h4 style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase' }}>Anwesenheitsquote</h4>
-          {totalPracticeDays > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={140}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
-                    <Cell fill={T.success} />
-                    <Cell fill={T.danger} />
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ textAlign: 'center', marginTop: 4 }}>
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 20, fontWeight: 700, color: attendancePercent >= 80 ? T.success : attendancePercent >= 50 ? T.warning : T.danger }}>{attendancePercent}%</span>
-                <span style={{ fontSize: 11, color: T.textDim, marginLeft: 8 }}>{attendedPracticeDays}/{totalPracticeDays} Tage</span>
-              </div>
-            </>
+          <h4 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Verifizierung</h4>
+          {pieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart><Pie data={pieData} cx="50%" cy="50%" outerRadius={60} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
+                {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
+              </Pie><Tooltip /></PieChart>
+            </ResponsiveContainer>
           ) : <p style={{ color: T.textDim, fontSize: 13 }}>Keine Daten</p>}
-          <div style={{ display: 'flex', gap: 3, marginTop: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 9, color: T.textDim, marginRight: 4 }}>Praktikumstage:</span>
-            {[['Mo', 1], ['Di', 2], ['Mi', 3], ['Do', 4], ['Fr', 5], ['Sa', 6]].map(([l, d]) => (
-              <button key={d} style={dayBtnStyle(practiceDays, d)} onClick={() => dayToggle(practiceDays, setPracticeDays, d)}>{l}</button>
-            ))}
-          </div>
         </div>
 
-        {/* ── MITTE: Anwesenheit pro Wochentag ── */}
         <div style={{ background: T.surfaceLight, borderRadius: 10, padding: 16 }}>
-          <h4 style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase' }}>Anwesenheit pro Wochentag</h4>
+          <h4 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Anwesenheit nach Wochentag</h4>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={dayStats}>
               <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 11 }} />
-              <YAxis tick={{ fill: T.textDim, fontSize: 11 }} allowDecimals={false} />
+              <YAxis tick={{ fill: T.textDim, fontSize: 11 }} />
               <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text }} />
-              <Bar dataKey="anwesend" fill={T.accent} radius={[4, 4, 0, 0]} name="Anwesend" />
+              <Bar dataKey="anwesend" fill={T.accent} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-          <div style={{ display: 'flex', gap: 3, marginTop: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 9, color: T.textDim, marginRight: 4 }}>Tage:</span>
-            {[['Mo', 1], ['Di', 2], ['Mi', 3], ['Do', 4], ['Fr', 5], ['Sa', 6]].map(([l, d]) => (
-              <button key={d} style={dayBtnStyle(chartMiddleDays, d)} onClick={() => dayToggle(chartMiddleDays, setChartMiddleDays, d)}>{l}</button>
-            ))}
-          </div>
         </div>
 
-        {/* ── RECHTS: Check-ins pro KW ── */}
         <div style={{ background: T.surfaceLight, borderRadius: 10, padding: 16 }}>
-          <h4 style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase' }}>Check-ins pro Kalenderwoche</h4>
+          <h4 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Trend letzte 8 Wochen</h4>
           <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={weekCounts}>
+            <BarChart data={weekTrend}>
               <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 10 }} />
-              <YAxis tick={{ fill: T.textDim, fontSize: 11 }} allowDecimals={false} domain={[0, (max) => Math.max(max, 3)]} />
+              <YAxis tick={{ fill: T.textDim, fontSize: 11 }} />
               <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text }} />
-              <Bar dataKey="tage" fill={T.success} radius={[4, 4, 0, 0]} name="Check-ins" />
+              <Bar dataKey="tage" fill={T.success} radius={[4, 4, 0, 0]} name="Anwesend" />
             </BarChart>
           </ResponsiveContainer>
-          <div style={{ fontSize: 9, color: T.textDim, marginTop: 4 }}>Alle Tage (Mo–So) der jeweiligen KW</div>
         </div>
       </div>
 
-      {/* Check-in Liste */}
       <div style={{ marginTop: 16 }}>
         <h4 style={{ fontSize: 12, color: T.textMuted, marginBottom: 8, textTransform: 'uppercase' }}>Alle Check-ins</h4>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -763,19 +668,11 @@ function Companies({ companies, apiCompanies, showToast, userRole, userKlasse })
               <div style={{ marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8, color: T.textDim }}>NFC-Tag mit "NFC Tools" → Schreiben → URL → die grüne URL eintragen</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button style={{ ...S.btnPrimary, flex: 1 }} onClick={async () => {
-                try {
-                  const imgUrl = qrUrl(`${baseUrl}/c/${showQR.code}`, 400)
-                  const res = await fetch(imgUrl)
-                  const blob = await res.blob()
-                  const pngBlob = new Blob([blob], { type: 'image/png' })
-                  await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
-                  alert('QR-Code kopiert! Du kannst ihn jetzt mit Strg+V in Word einf\u00FCgen.')
-                } catch (e) {
-                  alert('Kopieren fehlgeschlagen. Bitte Rechtsklick auf den QR-Code \u2192 "Bild kopieren".')
-                }
-              }}>QR-Code kopieren</button>
-              <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setShowQR(null)}>Schlie\u00DFen</button>
+              {/* ── GEÄNDERTER BUTTON ── */}
+              <button style={{ ...S.btnPrimary, flex: 1 }} onClick={() => {
+                window.location.href = `/api/export?code=${showQR.code}&name=${encodeURIComponent(showQR.name)}&baseUrl=${encodeURIComponent(baseUrl)}`
+              }}>📄 Zettel herunterladen</button>
+              <button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setShowQR(null)}>Schließen</button>
             </div>
           </div>
         </div>
@@ -794,9 +691,9 @@ function Companies({ companies, apiCompanies, showToast, userRole, userKlasse })
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button style={S.btnSmall} onClick={() => setShowQR(c)}>QR</button>
-                  <button style={S.btnSmall} onClick={() => { setForm({ name: c.name, code: c.code, klasse: c.klasse || '' }); setEditId(c.id); setShowForm(true) }}>{'\u270E'}</button>
-                  <button style={{ ...S.btnSmall, color: c.archived ? T.success : T.warning }} onClick={async () => { await apiCompanies('update', { ...c, archived: !c.archived }); showToast(c.archived ? 'Betrieb wiederhergestellt' : 'Betrieb archiviert') }}>{c.archived ? '\u21A9' : '\uD83D\uDCE6'}</button>
-                  <button style={{ ...S.btnSmall, color: T.danger }} onClick={async () => { await apiCompanies('delete', null, c.id); showToast('Gel\u00F6scht') }}>{'\u2717'}</button>
+                  <button style={S.btnSmall} onClick={() => { setForm({ name: c.name, code: c.code, klasse: c.klasse || '' }); setEditId(c.id); setShowForm(true) }}>✎</button>
+                  <button style={{ ...S.btnSmall, color: c.archived ? T.success : T.warning }} onClick={async () => { await apiCompanies('update', { ...c, archived: !c.archived }); showToast(c.archived ? 'Betrieb wiederhergestellt' : 'Betrieb archiviert') }}>{c.archived ? '↩' : '📦'}</button>
+                  <button style={{ ...S.btnSmall, color: T.danger }} onClick={async () => { await apiCompanies('delete', null, c.id); showToast('Gelöscht') }}>✗</button>
                 </div>
               </div>
             </div>
@@ -925,7 +822,6 @@ const S = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 },
   h1: { fontFamily: "'Space Mono', monospace", fontSize: 22, fontWeight: 700, color: T.text },
   h2: { fontFamily: "'Space Mono', monospace", fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 4 },
-  headerSub: { fontSize: 13, color: T.textMuted },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 20 },
   card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: 20, marginBottom: 12 },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
