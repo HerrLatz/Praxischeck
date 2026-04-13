@@ -40,7 +40,7 @@ export async function GET(request) {
             new Paragraph({
               alignment: AlignmentType.RIGHT,
               children: [
-                new TextRun({ text: `${code} \u2013 ${name}`, size: 18, font: "Arial", color: "666666", italics: true }),
+                new TextRun({ text: name, size: 18, font: "Arial", color: "666666", italics: true }),
               ],
             }),
           ],
@@ -53,7 +53,7 @@ export async function GET(request) {
           spacing: { after: 180 },
           children: [new TextRun({
             text: "Anwesenheit im Praktikum",
-            bold: true, size: 48, font: "Arial",
+            bold: true, size: 52, font: "Arial",
           })],
         }),
 
@@ -116,7 +116,7 @@ export async function GET(request) {
                 alignment: AlignmentType.CENTER,
                 children: [new ImageRun({
                   data: qrBuffer,
-                  transformation: { width: 220, height: 220 },
+                  transformation: { width: 280, height: 280 },
                   type: "png",
                 })],
               })],
