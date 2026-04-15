@@ -8,7 +8,21 @@ const redis = new Redis({
 })
 
 const WEEKDAY_NAMES = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
-const SCHOOL_DAYS = [3, 4]
+
+const NRW_FERIEN = [
+  ['2026-03-30', '2026-04-11'],
+  ['2026-05-26', '2026-05-26'],
+  ['2026-07-20', '2026-09-01'],
+  ['2026-10-17', '2026-10-31'],
+  ['2026-12-23', '2027-01-06'],
+  ['2027-03-29', '2027-04-12'],
+  ['2027-05-25', '2027-05-25'],
+  ['2027-07-05', '2027-08-17'],
+]
+
+function isInHoliday(dateStr) {
+  return NRW_FERIEN.some(([start, end]) => dateStr >= start && dateStr <= end)
+}
 
 const cellBorder = { style: BorderStyle.SINGLE, size: 1, color: '999999' }
 const borders = { top: cellBorder, bottom: cellBorder, left: cellBorder, right: cellBorder }
@@ -44,7 +58,8 @@ function emptyCell(width, height) {
 
 export async function POST(req) {
   try {
-    const { companyId, startDate, endDate } = await req.json()
+    const { companyId, startDate, endDate, schoolDays } = await req.json()
+    const activeSchoolDays = Array.isArray(schoolDays) ? schoolDays : [3, 4]
     const companies = await redis.get('companies') || []
     const checkins = await redis.get('checkins') || []
     const company = companies.find(c => c.id === companyId)
@@ -54,14 +69,16 @@ export async function POST(req) {
     }
 
     const missingDays = []
-    const current = new Date(startDate)
-    const end = new Date(endDate)
+    const current = new Date(startDate + 'T12:00:00')
+    const end = new Date(endDate + 'T12:00:00')
     const today = new Date().toISOString().split('T')[0]
 
     while (current <= end) {
-      const dateStr = current.toISOString().split('T')[0]
+      const dateStr = current.getFullYear() + '-' + String(current.getMonth() + 1).padStart(2, '0') + '-' + String(current.getDate()).padStart(2, '0')
       const dayNum = current.getDay()
-      if (dayNum !== 0 && dayNum !== 6 && !SCHOOL_DAYS.includes(dayNum) && dateStr <= today) {
+      const isPracticeDay = dayNum !== 0 && dayNum !== 6 && !activeSchoolDays.includes(dayNum)
+      const isHoliday = isInHoliday(dateStr)
+      if (isPracticeDay && !isHoliday && dateStr <= today) {
         const hasCheckin = checkins.some(c => c.companyId === companyId && c.date === dateStr)
         if (!hasCheckin) {
           missingDays.push({
