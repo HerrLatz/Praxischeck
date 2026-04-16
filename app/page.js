@@ -62,7 +62,7 @@ const NRW_FERIEN = [
   ['2027-07-05', '2027-08-17'],
 ]
 
-const PROJECT_START = '2026-04-13'
+const PROJECT_START = '2026-03-23'
 
 function isInHoliday(dateStr) {
   return NRW_FERIEN.some(([start, end]) => dateStr >= start && dateStr <= end)
@@ -155,7 +155,7 @@ export default function AdminPage() {
   const apiCompanies = async (action, company, id) => { await fetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, company, id }) }); refresh() }
   const manualCheckin = async (companyId, date, nfcVerified) => { await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, date, nfcVerified }) }); refresh(); showToast('Anwesenheit manuell eingetragen') }
   const deleteCheckin = async (companyId, date) => { if (!confirm('Anwesenheit f\u00fcr diesen Tag entfernen?')) return; await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, date, action: 'delete' }) }); refresh(); showToast('Anwesenheit entfernt') }
-  const resetData = async (type) => { const pw = prompt(type === 'all' ? 'ALLE Daten l\u00f6schen \u2013 bitte Passwort eingeben:' : 'Alle Check-ins l\u00f6schen \u2013 bitte Passwort eingeben:'); if (!pw) return; const authCheck = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: pw }) }); const authData = await authCheck.json(); if (!authData.ok) { alert('Falsches Passwort!'); return }; if (!confirm(type === 'all' ? 'Wirklich ALLE Daten unwiderruflich l\u00f6schen?' : 'Wirklich alle Check-ins unwiderruflich l\u00f6schen?')) return; await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) }); refresh(); showToast(type === 'all' ? 'Alle Daten gel\u00f6scht' : 'Check-ins gel\u00f6scht') }
+  const resetData = async (payload) => { const pw = prompt('Bitte Admin-Passwort eingeben:'); if (!pw) return; const authCheck = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: pw }) }); const authData = await authCheck.json(); if (!authData.ok) { alert('Falsches Passwort!'); return }; if (!confirm('Wirklich unwiderruflich l\u00f6schen?')) return; const res = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await res.json(); refresh(); showToast(data.deleted !== undefined ? `${data.deleted} Eintr\u00e4ge gel\u00f6scht` : 'Gel\u00f6scht') }
   const logout = () => { localStorage.removeItem('pk-auth'); localStorage.removeItem('pk-auth-data'); setAuthed(false); setUserRole(null); setUserKlasse(null); setUserName('') }
 
   if (!authed) return <><style>{CSS}</style><LoginScreen onLogin={handleLogin} /></>
@@ -192,7 +192,7 @@ export default function AdminPage() {
         {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }} />}
         {view === 'companies' && <Companies {...{ companies: (userRole === 'lehrer' ? companies.filter(c => c.klasse === userKlasse) : companies).slice().sort((a, b) => a.name.localeCompare(b.name, 'de')), apiCompanies, showToast, userRole, userKlasse }} />}
         {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, schoolDays }} />}
-        {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, resetData }} />}
+        {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, resetData, companies }} />}
         {archivedCompanies.length > 0 && (view === 'dashboard' || view === 'export') && (<div style={{ marginTop: 8 }}><button style={{ ...S.btnSmall, color: showArchived ? T.accent : T.textDim }} onClick={() => setShowArchived(!showArchived)}>{showArchived ? `Archiv ausblenden (${archivedCompanies.length})` : `Archiv anzeigen (${archivedCompanies.length})`}</button></div>)}
       </main>
     </div>
@@ -333,9 +333,111 @@ function ExportView({ companies, checkins, schoolDays }) {
   return (<div style={{ animation: 'fadeIn .3s ease' }}><div style={S.header}><h1 style={S.h1}>CSV-Export</h1><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><span style={{ fontSize: 13, color: T.textMuted }}>Zeitraum:</span><select style={{ ...S.input, width: 'auto' }} value={weeksBack} onChange={e => setWeeksBack(Number(e.target.value))}><option value={1}>Aktuelle Woche</option><option value={2}>2 Wochen</option><option value={4}>4 Wochen</option><option value={8}>8 Wochen</option><option value={52}>Ganzes Jahr</option></select></div></div><div style={S.card}><p style={{ color: T.textMuted, fontSize: 14, marginBottom: 16 }}>Die CSV enth&auml;lt: K&uuml;rzel, Betriebsname, Klasse und f&uuml;r jeden Tag den Check-in-Status.</p><button style={S.btnPrimary} onClick={downloadCSV}>{"\u2193"} CSV herunterladen</button></div></div>)
 }
 
-function Settings({ schoolDays, setSchoolDays, resetData }) {
+function Settings({ schoolDays, setSchoolDays, resetData, companies }) {
   const toggleDay = (day) => { setSchoolDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]) }
-  return (<div style={{ animation: 'fadeIn .3s ease' }}><h1 style={{ ...S.h1, marginBottom: 24 }}>Einstellungen</h1><div style={S.card}><h2 style={S.h2}>Schultage festlegen</h2><p style={{ color: T.textMuted, fontSize: 13, marginBottom: 12 }}>An Schultagen wird kein Check-in erwartet.</p><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{[['Mo',1],['Di',2],['Mi',3],['Do',4],['Fr',5],['Sa',6]].map(([label,day]) => (<button key={day} onClick={() => toggleDay(day)} style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${schoolDays.includes(day) ? T.accent : T.border}`, background: schoolDays.includes(day) ? T.accentDim + '44' : T.surfaceLight, color: schoolDays.includes(day) ? T.accent : T.textMuted, fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>{label} {schoolDays.includes(day) ? '\u2713' : ''}</button>))}</div></div><div style={{ ...S.card, borderColor: T.danger + '44' }}><h2 style={{ ...S.h2, color: T.danger }}>Daten zur&uuml;cksetzen</h2><p style={{ color: T.textMuted, fontSize: 13, marginBottom: 12 }}>Vorsicht: Nicht r&uuml;ckg&auml;ngig machbar.</p><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button style={{ ...S.btnSmall, color: T.warning, borderColor: T.warning + '44' }} onClick={() => resetData('checkins')}>Alle Check-ins l&ouml;schen</button><button style={{ ...S.btnSmall, color: T.danger, borderColor: T.danger + '44' }} onClick={() => resetData('all')}>ALLE Daten l&ouml;schen</button></div></div></div>)
+  const [weeksOld, setWeeksOld] = useState(4)
+  const [rangeStart, setRangeStart] = useState('')
+  const [rangeEnd, setRangeEnd] = useState('')
+  const [klasseSel, setKlasseSel] = useState('BPA')
+  const [companySel, setCompanySel] = useState('')
+  const [companyFull, setCompanyFull] = useState('')
+  const sortedCompanies = companies.slice().sort((a,b) => a.name.localeCompare(b.name, 'de'))
+  const archivedCount = companies.filter(c => c.archived).length
+  const btnRow = { ...S.btnSmall, color: T.warning, borderColor: T.warning + '44' }
+  const btnDanger = { ...S.btnSmall, color: T.danger, borderColor: T.danger + '44' }
+  const miniInput = { ...S.input, width: 'auto', padding: '6px 8px', fontSize: 12 }
+  const sectionCard = { ...S.card, borderColor: T.warning + '33' }
+  return (
+    <div style={{ animation: 'fadeIn .3s ease' }}>
+      <h1 style={{ ...S.h1, marginBottom: 24 }}>Einstellungen</h1>
+      <div style={S.card}>
+        <h2 style={S.h2}>Schultage festlegen</h2>
+        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 12 }}>An Schultagen wird kein Check-in erwartet.</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[['Mo',1],['Di',2],['Mi',3],['Do',4],['Fr',5],['Sa',6]].map(([label,day]) => (
+            <button key={day} onClick={() => toggleDay(day)} style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${schoolDays.includes(day) ? T.accent : T.border}`, background: schoolDays.includes(day) ? T.accentDim + '44' : T.surfaceLight, color: schoolDays.includes(day) ? T.accent : T.textMuted, fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>{label} {schoolDays.includes(day) ? '\u2713' : ''}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={sectionCard}>
+        <h2 style={{ ...S.h2, color: T.warning }}>Check-ins l&ouml;schen</h2>
+        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>Betriebe bleiben erhalten, nur die Check-in-Daten werden entfernt.</p>
+
+        <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+          <label style={S.label}>&Auml;lter als ... Wochen</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select style={miniInput} value={weeksOld} onChange={e => setWeeksOld(Number(e.target.value))}>
+              {[1,2,4,8,12,26,52].map(w => <option key={w} value={w}>{w} Wochen</option>)}
+            </select>
+            <button style={btnRow} onClick={() => resetData({ type: 'checkins_older_than', weeksOld })}>L&ouml;schen</button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+          <label style={S.label}>Zeitraum</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input type="date" style={miniInput} value={rangeStart} onChange={e => setRangeStart(e.target.value)} />
+            <span style={{ color: T.textDim, fontSize: 12 }}>bis</span>
+            <input type="date" style={miniInput} value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
+            <button style={btnRow} onClick={() => { if (!rangeStart || !rangeEnd) { alert('Bitte beide Daten w\u00e4hlen'); return }; resetData({ type: 'checkins_range', startDate: rangeStart, endDate: rangeEnd }) }}>L&ouml;schen</button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+          <label style={S.label}>Einer Klasse</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select style={miniInput} value={klasseSel} onChange={e => setKlasseSel(e.target.value)}>
+              {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button style={btnRow} onClick={() => resetData({ type: 'checkins_klasse', klasse: klasseSel })}>L&ouml;schen</button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+          <label style={S.label}>Eines Betriebs</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select style={miniInput} value={companySel} onChange={e => setCompanySel(e.target.value)}>
+              <option value="">{"\u2013 Betrieb w\u00e4hlen \u2013"}</option>
+              {sortedCompanies.map(c => <option key={c.id} value={c.id}>{c.code} {"\u2013"} {c.name}</option>)}
+            </select>
+            <button style={btnRow} onClick={() => { if (!companySel) { alert('Bitte Betrieb w\u00e4hlen'); return }; resetData({ type: 'checkins_company', companyId: companySel }) }}>L&ouml;schen</button>
+          </div>
+        </div>
+
+        <div>
+          <label style={S.label}>Alle Check-ins</label>
+          <button style={btnRow} onClick={() => resetData({ type: 'checkins' })}>Alle Check-ins l&ouml;schen</button>
+        </div>
+      </div>
+
+      <div style={{ ...S.card, borderColor: T.danger + '33' }}>
+        <h2 style={{ ...S.h2, color: T.danger }}>Betriebe l&ouml;schen</h2>
+        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>Betriebe werden inkl. aller zugeh&ouml;rigen Check-ins entfernt.</p>
+
+        <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+          <label style={S.label}>Einzelnen Betrieb komplett l&ouml;schen</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select style={miniInput} value={companyFull} onChange={e => setCompanyFull(e.target.value)}>
+              <option value="">{"\u2013 Betrieb w\u00e4hlen \u2013"}</option>
+              {sortedCompanies.map(c => <option key={c.id} value={c.id}>{c.code} {"\u2013"} {c.name}</option>)}
+            </select>
+            <button style={btnDanger} onClick={() => { if (!companyFull) { alert('Bitte Betrieb w\u00e4hlen'); return }; resetData({ type: 'company_full', companyId: companyFull }) }}>L&ouml;schen</button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+          <label style={S.label}>Alle archivierten Betriebe ({archivedCount})</label>
+          <button style={btnDanger} onClick={() => resetData({ type: 'archived_companies' })} disabled={archivedCount === 0}>Archivierte endg&uuml;ltig l&ouml;schen</button>
+        </div>
+
+        <div>
+          <label style={S.label}>Alles zur&uuml;cksetzen</label>
+          <button style={btnDanger} onClick={() => resetData({ type: 'all' })}>ALLE Daten l&ouml;schen (Betriebe + Check-ins)</button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function Empty({ text }) { return <div style={{ textAlign: 'center', padding: '40px 20px', color: T.textDim }}><div style={{ fontSize: 28, marginBottom: 8, opacity: .4 }}>{"\u25C7"}</div><p>{text}</p></div> }
