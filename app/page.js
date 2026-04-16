@@ -62,7 +62,7 @@ const NRW_FERIEN = [
   ['2027-07-05', '2027-08-17'],
 ]
 
-const PROJECT_START = '2026-03-23'
+const PROJECT_START = '2026-04-13'
 
 function isInHoliday(dateStr) {
   return NRW_FERIEN.some(([start, end]) => dateStr >= start && dateStr <= end)
