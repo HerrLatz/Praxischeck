@@ -21,6 +21,14 @@ export async function POST(req) {
 
     const checkins = await redis.get('checkins') || []
     const todayStr = berlinDate()
+
+    if (company.startDate && todayStr < company.startDate) {
+      return NextResponse.json({ error: 'not_started', message: 'Praktikum hat noch nicht begonnen.' }, { status: 400 })
+    }
+    if (company.endDate && todayStr > company.endDate) {
+      return NextResponse.json({ error: 'ended', message: 'Praktikumszeitraum ist beendet.' }, { status: 400 })
+    }
+
     const existingIndex = checkins.findIndex(c => c.companyId === company.id && c.date === todayStr)
 
     if (existingIndex !== -1) {
