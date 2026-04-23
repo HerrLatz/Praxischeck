@@ -171,7 +171,7 @@ export default function AdminPage() {
       <nav className="sidebar" style={S.sidebar}>
         <div className="logo-area" style={S.logo}><div style={S.logoIcon}>{"\u2713"}</div><div><div style={S.logoText}>PraxisCheck</div><div style={S.logoSub}>{userName || 'Admin'}</div></div></div>
         <div className="nav-section" style={S.navSection}>
-          {[['dashboard','\u25C9','Dashboard'],['companies','\u25C6','Betriebe'],['export','\u2193','CSV-Export'],['settings','\u2699','Einstellungen']].filter(([k]) => { if (userRole === 'lehrer' && k === 'settings') return false; return true }).map(([k,i,l]) => (
+          {[['dashboard','\u25C9','Dashboard'],['companies','\u25C6','Betriebe'],['analyse','\u25A3','Analyse'],['export','\u2193','CSV-Export'],['settings','\u2699','Einstellungen']].filter(([k]) => { if (userRole === 'lehrer' && k === 'settings') return false; return true }).map(([k,i,l]) => (
             <button key={k} onClick={() => setView(k)} style={{ ...S.navItem, ...(view === k ? S.navActive : {}) }}><span style={S.navIcon}>{i}</span>{l}</button>
           ))}
         </div>
@@ -192,6 +192,7 @@ export default function AdminPage() {
         {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }} />}
         {view === 'companies' && <Companies {...{ companies: (userRole === 'lehrer' ? companies.filter(c => c.klasse === userKlasse) : companies).slice().sort((a, b) => a.name.localeCompare(b.name, 'de')), apiCompanies, showToast, userRole, userKlasse }} />}
         {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, schoolDays }} />}
+        {view === 'analyse' && <AnalyseView {...{ companies, checkins, schoolDays }} />}
         {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, resetData, companies }} />}
         {archivedCompanies.length > 0 && (view === 'dashboard' || view === 'export') && (<div style={{ marginTop: 8 }}><button style={{ ...S.btnSmall, color: showArchived ? T.accent : T.textDim }} onClick={() => setShowArchived(!showArchived)}>{showArchived ? `Archiv ausblenden (${archivedCompanies.length})` : `Archiv anzeigen (${archivedCompanies.length})`}</button></div>)}
       </main>
@@ -364,6 +365,205 @@ function Companies({ companies, apiCompanies, showToast, userRole, userKlasse })
       </div></div>)}
 
       {filteredCompanies.length === 0 ? <div style={S.card}><Empty text="Keine Betriebe gefunden." /></div> : (<div style={{ display: 'grid', gap: 10 }}>{filteredCompanies.map(c => (<div key={c.id} style={{ ...S.card, padding: 16, opacity: c.archived ? 0.5 : 1 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, fontWeight: 700, color: T.accent }}>{c.code}</span><span style={{ color: T.text, fontSize: 15 }}>{c.name}</span>{c.klasse && <span style={{ ...S.badge, background: T.surfaceLight, color: T.textMuted, fontSize: 11 }}>{c.klasse}</span>}{c.startDate && <span style={{ fontSize: 10, color: T.textDim }}>{c.startDate.split('-').reverse().slice(0,2).join('.')}{"\u2013"}{(c.endDate || '17.07.').split('-').reverse().slice(0,2).join('.')}</span>}{c.archived && <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 10 }}>Archiviert</span>}</div><div style={{ display: 'flex', gap: 6 }}><button style={S.btnSmall} onClick={() => setShowQR(c)}>QR</button><button style={{ ...S.btnSmall, fontSize: 10 }} onClick={() => loadTrash(c)} title="Entfernte Check-ins">{"\uD83D\uDDD1"}</button><button style={S.btnSmall} onClick={() => { setForm({ name: c.name, code: c.code, klasse: c.klasse || '', startDate: c.startDate || '2026-04-13', endDate: c.endDate || '2026-07-17' }); setEditId(c.id); setShowForm(true) }}>{"\u270E"}</button><button style={{ ...S.btnSmall, color: c.archived ? T.success : T.warning }} onClick={async () => { await apiCompanies('update', { ...c, archived: !c.archived }); showToast(c.archived ? 'Betrieb wiederhergestellt' : 'Betrieb archiviert') }}>{c.archived ? '\u21A9' : '\uD83D\uDCE6'}</button><button style={{ ...S.btnSmall, color: T.danger }} onClick={async () => { await apiCompanies('delete', null, c.id); showToast('Gel\u00f6scht') }}>{"\u2717"}</button></div></div></div>))}</div>)}
+    </div>
+  )
+}
+
+// ─── ANALYSE ───
+function AnalyseView({ companies, checkins, schoolDays }) {
+  const [klasseFilter, setKlasseFilter] = useState('')
+  const todayStr = new Date().toISOString().split('T')[0]
+  const practiceDayNums = [1,2,3,4,5].filter(d => !schoolDays.includes(d))
+  const activeCompanies = companies.filter(c => !c.archived)
+
+  function getCompanyStats(co) {
+    const sd = co.startDate || PROJECT_START
+    const ed = co.endDate || '2026-07-17'
+    const effectiveEnd = ed < todayStr ? ed : todayStr
+    const coCheckins = checkins.filter(c => c.companyId === co.id && c.date >= sd && c.date <= effectiveEnd)
+    let totalDays = 0, attended = 0, nfc = 0, qrOnly = 0
+    const dayCount = {}
+    practiceDayNums.forEach(d => { dayCount[d] = { total: 0, attended: 0 } })
+    for (let d = new Date(sd + 'T12:00:00'); ; d.setDate(d.getDate() + 1)) {
+      const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+      if (ds > effectiveEnd) break
+      if (isInHoliday(ds)) continue
+      const wd = d.getDay()
+      if (practiceDayNums.includes(wd)) {
+        totalDays++
+        if (dayCount[wd]) dayCount[wd].total++
+        const ci = coCheckins.find(c => c.date === ds)
+        if (ci) { attended++; if (dayCount[wd]) dayCount[wd].attended++; if (ci.nfcVerified) nfc++; else qrOnly++ }
+      }
+    }
+    const pct = totalDays > 0 ? Math.round((attended / totalDays) * 100) : 0
+    const missingDayPattern = Object.entries(dayCount).filter(([, v]) => v.total >= 2 && v.attended / v.total < 0.4).map(([d]) => WEEKDAYS[Number(d)])
+    return { co, totalDays, attended, missed: totalDays - attended, pct, nfc, qrOnly, missingDayPattern, neverNfc: nfc === 0 && qrOnly > 0 }
+  }
+
+  const allStats = activeCompanies.map(getCompanyStats).filter(s => s.totalDays > 0)
+  const filteredStats = klasseFilter ? allStats.filter(s => s.co.klasse === klasseFilter) : allStats
+
+  // Klassen-Aggregat
+  const classSummary = CLASSES.map(cls => {
+    const cs = allStats.filter(s => s.co.klasse === cls)
+    const total = cs.reduce((a, s) => a + s.totalDays, 0)
+    const att = cs.reduce((a, s) => a + s.attended, 0)
+    return { name: cls, quote: total > 0 ? Math.round((att / total) * 100) : 0, betriebe: cs.length, total, attended: att }
+  }).filter(c => c.betriebe > 0)
+
+  const gesamt = allStats.reduce((a, s) => ({ t: a.t + s.totalDays, a: a.a + s.attended, n: a.n + s.nfc, q: a.q + s.qrOnly }), { t: 0, a: 0, n: 0, q: 0 })
+  const gesamtPct = gesamt.t > 0 ? Math.round((gesamt.a / gesamt.t) * 100) : 0
+
+  // Auffälligkeiten
+  const highAbsence = filteredStats.filter(s => s.pct < 70).sort((a, b) => a.pct - b.pct)
+  const patternIssues = filteredStats.filter(s => s.missingDayPattern.length > 0)
+  const neverNfcList = filteredStats.filter(s => s.neverNfc)
+
+  // Trend: letzte 6 Wochen
+  const weekTrend = []
+  const now = new Date()
+  for (let i = 5; i >= 0; i--) {
+    const m = getMonday(new Date(now.getTime() - i * 7 * 86400000))
+    const dates = getWeekDatesFromMonday(m)
+    const practiceDates = dates.filter(d => { const day = new Date(d + 'T12:00:00').getDay(); return practiceDayNums.includes(day) && !isInHoliday(d) })
+    const relevantCompanies = activeCompanies.filter(c => { const sd = c.startDate || PROJECT_START; const ed = c.endDate || '2026-07-17'; return practiceDates.some(d => d >= sd && d <= ed) })
+    const possible = relevantCompanies.length * practiceDates.length
+    const actual = checkins.filter(c => practiceDates.includes(c.date) && relevantCompanies.some(co => co.id === c.companyId)).length
+    weekTrend.push({ name: getWeekLabel(m), quote: possible > 0 ? Math.round((actual / possible) * 100) : 0 })
+  }
+
+  const rankSorted = [...filteredStats].sort((a, b) => a.pct - b.pct)
+  const cardBg = { background: T.surfaceLight, borderRadius: 10, padding: 16 }
+
+  return (
+    <div style={{ animation: 'fadeIn .3s ease' }}>
+      <h1 style={{ ...S.h1, marginBottom: 20 }}>Analyse</h1>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
+        <button onClick={() => setKlasseFilter('')} style={{ ...S.filterBtn, ...(klasseFilter === '' ? S.filterActive : {}) }}>Alle</button>
+        {CLASSES.map(c => <button key={c} onClick={() => setKlasseFilter(c)} style={{ ...S.filterBtn, ...(klasseFilter === c ? S.filterActive : {}) }}>{c}</button>)}
+      </div>
+
+      {/* Gesamt-KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
+        <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Gesamtquote</div>
+          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono', monospace", color: gesamtPct >= 80 ? T.success : gesamtPct >= 50 ? T.warning : T.danger }}>{gesamtPct}%</div>
+        </div>
+        <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Betriebe</div>
+          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono', monospace", color: T.accent }}>{filteredStats.length}</div>
+        </div>
+        <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>NFC / QR</div>
+          <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'Space Mono', monospace" }}><span style={{ color: T.success }}>{gesamt.n}</span><span style={{ color: T.textDim }}> / </span><span style={{ color: T.warning }}>{gesamt.q}</span></div>
+        </div>
+        <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Auff&auml;llig</div>
+          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono', monospace", color: highAbsence.length > 0 ? T.danger : T.success }}>{highAbsence.length}</div>
+        </div>
+      </div>
+
+      {/* Diagramme */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
+        {/* Klassenvergleich */}
+        <div style={{ ...S.card }}>
+          <h3 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Anwesenheitsquote nach Klasse</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={classSummary}>
+              <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 11 }} />
+              <YAxis tick={{ fill: T.textDim, fontSize: 11 }} domain={[0, 100]} />
+              <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text }} formatter={(v) => `${v}%`} />
+              <Bar dataKey="quote" radius={[4, 4, 0, 0]} name="Quote">
+                {classSummary.map((c, i) => <Cell key={i} fill={c.quote >= 80 ? T.success : c.quote >= 50 ? T.warning : T.danger} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Wochen-Trend */}
+        <div style={{ ...S.card }}>
+          <h3 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Anwesenheitstrend (letzte 6 Wochen)</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={weekTrend}>
+              <XAxis dataKey="name" tick={{ fill: T.textDim, fontSize: 10 }} />
+              <YAxis tick={{ fill: T.textDim, fontSize: 11 }} domain={[0, 100]} />
+              <Tooltip contentStyle={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text }} formatter={(v) => `${v}%`} />
+              <Bar dataKey="quote" fill={T.accent} radius={[4, 4, 0, 0]} name="Quote %" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Ranking */}
+      <div style={{ ...S.card, marginBottom: 20 }}>
+        <h3 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Ranking nach Fehlquote {klasseFilter ? `\u2013 ${klasseFilter}` : '(alle Klassen)'}</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={S.table}>
+            <thead><tr>
+              <th style={S.th}>K&uuml;rzel</th><th style={S.th}>Betrieb</th><th style={S.th}>Klasse</th>
+              <th style={{ ...S.th, textAlign: 'center' }}>Quote</th><th style={{ ...S.th, textAlign: 'center' }}>Anwesend</th>
+              <th style={{ ...S.th, textAlign: 'center' }}>Gefehlt</th><th style={{ ...S.th, textAlign: 'center' }}>NFC</th><th style={{ ...S.th, textAlign: 'center' }}>QR</th>
+            </tr></thead>
+            <tbody>{rankSorted.map(s => (
+              <tr key={s.co.id}>
+                <td style={{ ...S.td, fontFamily: "'Space Mono', monospace", color: T.accent, fontWeight: 700 }}>{s.co.code}</td>
+                <td style={{ ...S.td, color: T.text }}>{s.co.name}</td>
+                <td style={S.td}>{s.co.klasse || '\u2013'}</td>
+                <td style={{ ...S.td, textAlign: 'center', fontWeight: 700, color: s.pct >= 80 ? T.success : s.pct >= 50 ? T.warning : T.danger }}>{s.pct}%</td>
+                <td style={{ ...S.td, textAlign: 'center', color: T.success }}>{s.attended}</td>
+                <td style={{ ...S.td, textAlign: 'center', color: s.missed > 0 ? T.danger : T.textDim }}>{s.missed}</td>
+                <td style={{ ...S.td, textAlign: 'center', color: T.success }}>{s.nfc}</td>
+                <td style={{ ...S.td, textAlign: 'center', color: T.warning }}>{s.qrOnly}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Auffälligkeiten */}
+      <div style={{ ...S.card, borderColor: T.danger + '33' }}>
+        <h3 style={{ fontSize: 12, color: T.danger, marginBottom: 16, textTransform: 'uppercase' }}>Auff&auml;lligkeiten</h3>
+
+        {highAbsence.length > 0 && (<div style={{ marginBottom: 16 }}>
+          <h4 style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>{"\u26A0"} Hohe Fehlquote (&lt; 70%)</h4>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {highAbsence.map(s => (
+              <span key={s.co.id} style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 11 }}>
+                {s.co.code} {s.co.name} {"\u2013"} {s.pct}% ({s.missed} Tage gefehlt)
+              </span>
+            ))}
+          </div>
+        </div>)}
+
+        {patternIssues.length > 0 && (<div style={{ marginBottom: 16 }}>
+          <h4 style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>{"\uD83D\uDCC5"} Systematische Wochentag-Muster</h4>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {patternIssues.map(s => (
+              <span key={s.co.id} style={{ ...S.badge, background: T.warningDim, color: T.warning, fontSize: 11 }}>
+                {s.co.code} {s.co.name} {"\u2013"} fehlt h&auml;ufig: {s.missingDayPattern.join(', ')}
+              </span>
+            ))}
+          </div>
+        </div>)}
+
+        {neverNfcList.length > 0 && (<div style={{ marginBottom: 16 }}>
+          <h4 style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>{"\uD83D\uDCF1"} Nie NFC genutzt (nur QR)</h4>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {neverNfcList.map(s => (
+              <span key={s.co.id} style={{ ...S.badge, background: T.surfaceLight, color: T.warning, fontSize: 11 }}>
+                {s.co.code} {s.co.name} {"\u2013"} {s.qrOnly}x nur QR
+              </span>
+            ))}
+          </div>
+        </div>)}
+
+        {highAbsence.length === 0 && patternIssues.length === 0 && neverNfcList.length === 0 && (
+          <p style={{ color: T.textDim, fontSize: 13 }}>{"\u2713"} Keine Auff&auml;lligkeiten erkannt.</p>
+        )}
+      </div>
     </div>
   )
 }
