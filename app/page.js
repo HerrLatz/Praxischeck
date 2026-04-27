@@ -306,13 +306,14 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
               <tr>
                 <th style={{ ...S.th, minWidth: 55, ...stickyStyle(0, 4, T.surface), borderRight: `1px solid ${T.border}` }}>K{"\u00FC"}rzel</th>
                 <th style={{ ...S.th, minWidth: 120, ...stickyStyle(55, 4, T.surface), borderRight: `1px solid ${T.border}` }}>Betrieb</th>
-                {visibleDates.map(d => {
+                {visibleDates.map((d, di) => {
                   const day = new Date(d + 'T12:00:00').getDay()
                   const isToday = d === todayStr
                   const isHoliday = isInHoliday(d)
                   const isHidden = hiddenDays.includes(day)
+                  const isNewWeek = di > 0 && getWeekLabel(getMonday(new Date(d + 'T12:00:00'))) !== getWeekLabel(getMonday(new Date(visibleDates[di - 1] + 'T12:00:00')))
                   return (
-                    <th key={d} ref={isToday ? todayRef : null} data-date={d} style={{ ...S.th, textAlign: 'center', minWidth: colW, background: isToday ? T.accentDim + '33' : isHoliday ? T.warningDim + '22' : isHidden ? T.school : 'transparent', color: isToday ? T.accent : T.textDim, borderBottom: isToday ? `2px solid ${T.accent}` : undefined }}>
+                    <th key={d} ref={isToday ? todayRef : null} data-date={d} style={{ ...S.th, textAlign: 'center', minWidth: colW, background: isToday ? T.accentDim + '33' : isHoliday ? T.warningDim + '22' : isHidden ? T.school : 'transparent', color: isToday ? T.accent : T.textDim, borderBottom: isToday ? `2px solid ${T.accent}` : undefined, borderLeft: isNewWeek ? `2px solid ${T.accent}44` : undefined }}>
                       {WEEKDAYS[day]} {formatDate(d)}
                     </th>
                   )
@@ -328,16 +329,17 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
                     <tr style={{ height: 38 }}>
                       <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", cursor: 'pointer', verticalAlign: 'middle', ...stickyStyle(0, 2, T.surface), borderRight: `1px solid ${T.border}` }} onClick={() => setExpandedCompany(isExpanded ? null : co.id)}>{co.code}</td>
                       <td style={{ ...S.td, color: T.text, cursor: 'pointer', verticalAlign: 'middle', whiteSpace: 'nowrap', ...stickyStyle(55, 2, T.surface), borderRight: `1px solid ${T.border}` }} onClick={() => setExpandedCompany(isExpanded ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 10 }}>{isExpanded ? "\u25B2" : "\u25BC"}</span></td>
-                      {visibleDates.map(d => {
+                      {visibleDates.map((d, di) => {
                         const day = new Date(d + 'T12:00:00').getDay()
                         const isHidden = hiddenDays.includes(day)
                         const isHoliday = isInHoliday(d)
                         const outsideRange = (co.startDate && d < co.startDate) || (co.endDate && d > co.endDate)
                         const ci = checkins.find(c => c.companyId === co.id && c.date === d)
                         const isToday = d === todayStr
+                        const isNewWeek = di > 0 && getWeekLabel(getMonday(new Date(d + 'T12:00:00'))) !== getWeekLabel(getMonday(new Date(visibleDates[di - 1] + 'T12:00:00')))
                         const bgCol = isToday ? T.accentDim + '11' : isHoliday ? T.warningDim + '11' : isHidden ? T.school : 'transparent'
                         return (
-                          <td key={d} data-date={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: outsideRange ? 'default' : 'pointer', verticalAlign: 'middle', minWidth: colW }}
+                          <td key={d} data-date={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: outsideRange ? 'default' : 'pointer', verticalAlign: 'middle', minWidth: colW, borderLeft: isNewWeek ? `2px solid ${T.accent}44` : undefined }}
                             onClick={() => { if (outsideRange) return; if (ci) deleteCheckin(co.id, d); else manualCheckin(co.id, d, true) }}
                             title={outsideRange ? 'Au\u00dferhalb Praktikumszeitraum' : ci ? (ci.time + (ci.manual ? ' (manuell)' : '') + ' \u2013 Klicken zum Entfernen') : 'Klicken f\u00fcr manuellen Eintrag'}>
                             {outsideRange ? <span style={{ color: T.textDim, fontSize: 9 }}>{"\u00B7"}</span> : ci ? (
