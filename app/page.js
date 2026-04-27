@@ -206,27 +206,72 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
   const [reportCompany, setReportCompany] = useState(null)
   const [reportRange, setReportRange] = useState('this_week')
   const [reportLoading, setReportLoading] = useState(false)
-  const [weekOffset, setWeekOffset] = useState(0)
+  const scrollRef = React.useRef(null)
+  const todayRef = React.useRef(null)
   const todayStr = new Date().toISOString().split('T')[0]
-  const currentMonday = getMonday(new Date())
   const hiddenDays = [...schoolDays, 0, 6]
-  const allWeeks = []
-  const projectMonday = getMonday(new Date(PROJECT_START))
-  for (let i = 0; i < 52; i++) { const m = new Date(projectMonday); m.setDate(m.getDate() + i * 7); const dates = getWeekDatesFromMonday(m); const mondayStr = dates[0]; if (isHolidayWeek(mondayStr, dates[6])) { allWeeks.push({ monday: new Date(m), dates, label: getWeekLabel(m), holiday: getHolidayName(mondayStr) }) } else { allWeeks.push({ monday: new Date(m), dates, label: getWeekLabel(m), holiday: null }) } }
-  const currentWeekIndex = allWeeks.findIndex(w => w.dates.includes(todayStr))
-  const selectedIndex = Math.max(0, Math.min(allWeeks.length - 1, (currentWeekIndex >= 0 ? currentWeekIndex : 0) + weekOffset))
-  const selectedWeek = allWeeks[selectedIndex]
+
+  // Generate all dates from PROJECT_START to end of current week + 1
+  const allDates = []
+  const startD = new Date(PROJECT_START + 'T12:00:00')
+  const endD = new Date(getMonday(new Date()))
+  endD.setDate(endD.getDate() + 13)
+  for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+    const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+    allDates.push(ds)
+  }
+
+  const visibleDates = showHiddenDays ? allDates : allDates.filter(d => { const day = new Date(d + 'T12:00:00').getDay(); return !hiddenDays.includes(day) })
+
+  // Week labels for header row
+  const weekHeaders = []
+  let lastKW = ''
+  visibleDates.forEach((d, i) => {
+    const m = getMonday(new Date(d + 'T12:00:00'))
+    const kw = getWeekLabel(m)
+    if (kw !== lastKW) {
+      let span = 0
+      for (let j = i; j < visibleDates.length; j++) {
+        const m2 = getMonday(new Date(visibleDates[j] + 'T12:00:00'))
+        if (getWeekLabel(m2) === kw) span++; else break
+      }
+      const mondayStr = m.getFullYear() + '-' + String(m.getMonth() + 1).padStart(2, '0') + '-' + String(m.getDate()).padStart(2, '0')
+      const isHoliday = isHolidayWeek(mondayStr, visibleDates[Math.min(i + 6, visibleDates.length - 1)])
+      weekHeaders.push({ kw, span, idx: i, holiday: isHoliday ? getHolidayName(mondayStr) : null })
+      lastKW = kw
+    }
+  })
+
   const todayCI = checkins.filter(c => c.date === todayStr)
   const todayCompanyIds = new Set(todayCI.map(c => c.companyId))
   const checkedIn = companies.filter(c => todayCompanyIds.has(c.id)).length
   const nfcCount = todayCI.filter(c => c.nfcVerified && companies.some(co => co.id === c.companyId)).length
   const qrCount = todayCI.filter(c => !c.nfcVerified && companies.some(co => co.id === c.companyId)).length
 
-  const generateReport = async () => { setReportLoading(true); let startDate, endDate; const refMonday = selectedWeek ? new Date(selectedWeek.monday) : getMonday(new Date()); refMonday.setHours(12,0,0,0); const fmt = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); const satOf = (mon) => { const s = new Date(mon); s.setDate(mon.getDate() + 5); return s }; if (reportRange === 'this_week') { startDate = fmt(refMonday); endDate = fmt(satOf(refMonday)) } else if (reportRange === 'last_week') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 7); startDate = fmt(lm); endDate = fmt(satOf(lm)) } else if (reportRange === '2_weeks') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 7); startDate = fmt(lm); endDate = fmt(satOf(refMonday)) } else if (reportRange === '4_weeks') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 21); startDate = fmt(lm); endDate = fmt(satOf(refMonday)) } else { startDate = PROJECT_START; endDate = fmt(satOf(refMonday)) }; try { const res = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: reportCompany.id, startDate, endDate, schoolDays }) }); if (!res.ok) throw new Error('Report failed'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Fehlbericht_${reportCompany.code}.docx`; a.click(); URL.revokeObjectURL(url); setReportCompany(null) } catch (e) { alert('Fehler: ' + e.message) }; setReportLoading(false) }
+  const scrollToToday = () => { if (todayRef.current) todayRef.current.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }) }
+  const scrollWeek = (dir) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: dir * 400, behavior: 'smooth' }) }
+
+  React.useEffect(() => { const t = setTimeout(scrollToToday, 300); return () => clearTimeout(t) }, [])
+
+  // For report: determine which week is currently most visible
+  const getVisibleMonday = () => {
+    if (!scrollRef.current) return getMonday(new Date())
+    const box = scrollRef.current
+    const center = box.scrollLeft + box.clientWidth / 2
+    const cols = box.querySelectorAll('[data-date]')
+    let closest = null, closestDist = Infinity
+    cols.forEach(col => { const dist = Math.abs(col.offsetLeft - center); if (dist < closestDist) { closestDist = dist; closest = col.getAttribute('data-date') } })
+    return closest ? getMonday(new Date(closest + 'T12:00:00')) : getMonday(new Date())
+  }
+
+  const generateReport = async () => { setReportLoading(true); let startDate, endDate; const refMonday = getVisibleMonday(); refMonday.setHours(12,0,0,0); const fmt = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); const satOf = (mon) => { const s = new Date(mon); s.setDate(mon.getDate() + 5); return s }; if (reportRange === 'this_week') { startDate = fmt(refMonday); endDate = fmt(satOf(refMonday)) } else if (reportRange === 'last_week') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 7); startDate = fmt(lm); endDate = fmt(satOf(lm)) } else if (reportRange === '2_weeks') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 7); startDate = fmt(lm); endDate = fmt(satOf(refMonday)) } else if (reportRange === '4_weeks') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 21); startDate = fmt(lm); endDate = fmt(satOf(refMonday)) } else { startDate = PROJECT_START; endDate = fmt(satOf(refMonday)) }; try { const res = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: reportCompany.id, startDate, endDate, schoolDays }) }); if (!res.ok) throw new Error('Report failed'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Fehlbericht_${reportCompany.code}.docx`; a.click(); URL.revokeObjectURL(url); setReportCompany(null) } catch (e) { alert('Fehler: ' + e.message) }; setReportLoading(false) }
+
+  const colW = 80
+  const stickyStyle = (left, zIdx, bg) => ({ position: 'sticky', left, zIndex: zIdx, background: bg || T.surface })
 
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
-      {reportCompany && (<div style={S.modal} onClick={() => setReportCompany(null)}><div style={S.modalContent} onClick={e => e.stopPropagation()}><h3 style={{ ...S.h2, fontSize: 16, marginBottom: 4 }}>Fehlbericht erstellen</h3><p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>{reportCompany.code} – {reportCompany.name}</p><div style={{ marginBottom: 16 }}><label style={S.label}>Zeitraum</label><select style={S.input} value={reportRange} onChange={e => setReportRange(e.target.value)}><option value="this_week">Diese Woche</option><option value="last_week">Letzte Woche</option><option value="2_weeks">Letzte 2 Wochen</option><option value="4_weeks">Letzte 4 Wochen</option><option value="all">Gesamter Zeitraum</option></select></div><p style={{ color: T.textDim, fontSize: 12, marginBottom: 16, lineHeight: 1.5 }}>Word-Datei mit allen Praktikumstagen ohne Check-in. Der Betrieb kann die Anwesenheit per Unterschrift best&auml;tigen.</p><div style={{ display: 'flex', gap: 8 }}><button style={{ ...S.btnPrimary, flex: 1, opacity: reportLoading ? 0.5 : 1 }} onClick={generateReport} disabled={reportLoading}>{reportLoading ? 'Wird erstellt...' : 'Word-Datei erstellen'}</button><button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setReportCompany(null)}>Abbrechen</button></div></div></div>)}
+      {reportCompany && (<div style={S.modal} onClick={() => setReportCompany(null)}><div style={S.modalContent} onClick={e => e.stopPropagation()}><h3 style={{ ...S.h2, fontSize: 16, marginBottom: 4 }}>Fehlbericht erstellen</h3><p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>{reportCompany.code} {"\u2013"} {reportCompany.name}</p><div style={{ marginBottom: 16 }}><label style={S.label}>Zeitraum</label><select style={S.input} value={reportRange} onChange={e => setReportRange(e.target.value)}><option value="this_week">Diese Woche</option><option value="last_week">Letzte Woche</option><option value="2_weeks">Letzte 2 Wochen</option><option value="4_weeks">Letzte 4 Wochen</option><option value="all">Gesamter Zeitraum</option></select></div><p style={{ color: T.textDim, fontSize: 12, marginBottom: 16, lineHeight: 1.5 }}>Word-Datei mit allen Praktikumstagen ohne Check-in.</p><div style={{ display: 'flex', gap: 8 }}><button style={{ ...S.btnPrimary, flex: 1, opacity: reportLoading ? 0.5 : 1 }} onClick={generateReport} disabled={reportLoading}>{reportLoading ? 'Wird erstellt...' : 'Word-Datei erstellen'}</button><button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setReportCompany(null)}>Abbrechen</button></div></div></div>)}
 
       <div className="stats-grid" style={S.statsGrid}>
         <div className="stat-card" style={{ ...S.card, padding: 20 }}><div style={{ fontSize: 11, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Heute eingecheckt</div><div className="stat-value" style={{ fontSize: 32, fontWeight: 700, color: T.success, fontFamily: "'Space Mono', monospace", lineHeight: 1 }}>{checkedIn}/{companies.length}</div><div style={{ fontSize: 12, color: T.textDim, marginTop: 6 }}>{companies.length - checkedIn} fehlen</div></div>
@@ -234,27 +279,86 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <h2 style={S.h2}>Wochen&uuml;bersicht</h2>
+        <h2 style={S.h2}>{"\u00DC"}bersicht</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button style={S.btnSmall} onClick={() => setShowHiddenDays(!showHiddenDays)}>{showHiddenDays ? 'Nur Praktikumstage' : 'Alle Tage anzeigen'}</button>
-          <button style={{ ...S.btnSmall, fontSize: 16, padding: '4px 12px' }} onClick={() => setWeekOffset(o => Math.max(o - 1, -(currentWeekIndex >= 0 ? currentWeekIndex : 0)))}>{"\u25C0"}</button>
-          <button style={{ ...S.btnSmall, color: weekOffset === 0 ? T.accent : T.textMuted, borderColor: weekOffset === 0 ? T.accent : T.border }} onClick={() => setWeekOffset(0)}>Heute</button>
-          <button style={{ ...S.btnSmall, fontSize: 16, padding: '4px 12px' }} onClick={() => setWeekOffset(o => Math.min(o + 1, allWeeks.length - 1 - (currentWeekIndex >= 0 ? currentWeekIndex : 0)))}>{"\u25B6"}</button>
+          <button style={{ ...S.btnSmall, fontSize: 16, padding: '4px 12px' }} onClick={() => scrollWeek(-1)}>{"\u25C0"}</button>
+          <button style={{ ...S.btnSmall, color: T.accent, borderColor: T.accent }} onClick={scrollToToday}>Heute</button>
+          <button style={{ ...S.btnSmall, fontSize: 16, padding: '4px 12px' }} onClick={() => scrollWeek(1)}>{"\u25B6"}</button>
         </div>
       </div>
 
-      <div style={S.card}>
-        <div style={{ padding: '10px 16px', background: weekOffset === 0 ? T.accentDim + '33' : 'transparent', borderBottom: `2px solid ${weekOffset === 0 ? T.accent : T.border}`, fontFamily: "'Space Mono', monospace", fontSize: 14, color: weekOffset === 0 ? T.accent : T.text, fontWeight: 600, textAlign: 'center' }}>
-          {selectedWeek?.holiday ? (<span>{"\uD83C\uDFD6"} {selectedWeek.label} {"\u2013"} {selectedWeek.holiday}</span>) : selectedWeek ? (<span>{selectedWeek.label} {"\u00B7"} {formatDate(selectedWeek.dates[0])} {"\u2013"} {formatDate(selectedWeek.dates[6])}</span>) : null}
+      <div style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
+        <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'visible', maxHeight: 'calc(100vh - 220px)' }}>
+          <table style={{ ...S.table, marginBottom: 0, borderCollapse: 'separate', borderSpacing: 0 }}>
+            {/* KW header row */}
+            <thead>
+              <tr>{/* sticky corners */}
+                <th style={{ ...S.th, minWidth: 55, ...stickyStyle(0, 4, T.surface), borderRight: `1px solid ${T.border}` }}></th>
+                <th style={{ ...S.th, minWidth: 120, ...stickyStyle(55, 4, T.surface), borderRight: `1px solid ${T.border}` }}></th>
+                {weekHeaders.map((wh, wi) => (
+                  <th key={wi} colSpan={wh.span} style={{ ...S.th, textAlign: 'center', background: wh.holiday ? T.warningDim + '33' : T.accentDim + '22', color: wh.holiday ? T.warning : T.accent, fontWeight: 600, fontSize: 11, borderBottom: `2px solid ${wh.holiday ? T.warning : T.accent}`, whiteSpace: 'nowrap' }}>
+                    {wh.holiday ? `${"\uD83C\uDFD6"} ${wh.kw}` : wh.kw}
+                  </th>
+                ))}
+                <th style={{ ...S.th, width: 30 }}></th>
+              </tr>
+              <tr>
+                <th style={{ ...S.th, minWidth: 55, ...stickyStyle(0, 4, T.surface), borderRight: `1px solid ${T.border}` }}>K{"\u00FC"}rzel</th>
+                <th style={{ ...S.th, minWidth: 120, ...stickyStyle(55, 4, T.surface), borderRight: `1px solid ${T.border}` }}>Betrieb</th>
+                {visibleDates.map(d => {
+                  const day = new Date(d + 'T12:00:00').getDay()
+                  const isToday = d === todayStr
+                  const isHoliday = isInHoliday(d)
+                  const isHidden = hiddenDays.includes(day)
+                  return (
+                    <th key={d} ref={isToday ? todayRef : null} data-date={d} style={{ ...S.th, textAlign: 'center', minWidth: colW, background: isToday ? T.accentDim + '33' : isHoliday ? T.warningDim + '22' : isHidden ? T.school : 'transparent', color: isToday ? T.accent : T.textDim, borderBottom: isToday ? `2px solid ${T.accent}` : undefined }}>
+                      {WEEKDAYS[day]} {formatDate(d)}
+                    </th>
+                  )
+                })}
+                <th style={{ ...S.th, width: 30 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {companies.map(co => {
+                const isExpanded = expandedCompany === co.id
+                return (
+                  <React.Fragment key={co.id}>
+                    <tr style={{ height: 38 }}>
+                      <td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", cursor: 'pointer', verticalAlign: 'middle', ...stickyStyle(0, 2, T.surface), borderRight: `1px solid ${T.border}` }} onClick={() => setExpandedCompany(isExpanded ? null : co.id)}>{co.code}</td>
+                      <td style={{ ...S.td, color: T.text, cursor: 'pointer', verticalAlign: 'middle', whiteSpace: 'nowrap', ...stickyStyle(55, 2, T.surface), borderRight: `1px solid ${T.border}` }} onClick={() => setExpandedCompany(isExpanded ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 10 }}>{isExpanded ? "\u25B2" : "\u25BC"}</span></td>
+                      {visibleDates.map(d => {
+                        const day = new Date(d + 'T12:00:00').getDay()
+                        const isHidden = hiddenDays.includes(day)
+                        const isHoliday = isInHoliday(d)
+                        const outsideRange = (co.startDate && d < co.startDate) || (co.endDate && d > co.endDate)
+                        const ci = checkins.find(c => c.companyId === co.id && c.date === d)
+                        const isToday = d === todayStr
+                        const bgCol = isToday ? T.accentDim + '11' : isHoliday ? T.warningDim + '11' : isHidden ? T.school : 'transparent'
+                        return (
+                          <td key={d} data-date={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: outsideRange ? 'default' : 'pointer', verticalAlign: 'middle', minWidth: colW }}
+                            onClick={() => { if (outsideRange) return; if (ci) deleteCheckin(co.id, d); else manualCheckin(co.id, d, true) }}
+                            title={outsideRange ? 'Au\u00dferhalb Praktikumszeitraum' : ci ? (ci.time + (ci.manual ? ' (manuell)' : '') + ' \u2013 Klicken zum Entfernen') : 'Klicken f\u00fcr manuellen Eintrag'}>
+                            {outsideRange ? <span style={{ color: T.textDim, fontSize: 9 }}>{"\u00B7"}</span> : ci ? (
+                              <span style={{ ...S.badge, background: ci.nfcVerified ? T.successDim : T.warningDim, color: ci.nfcVerified ? T.success : T.warning, fontSize: 10 }}>
+                                {ci.time === 'manuell' ? '\u270E' : ci.time} {ci.nfcVerified ? '\u2713' : '\u26A0'}
+                              </span>
+                            ) : d <= todayStr && !isHidden && !isHoliday ? (
+                              <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 10 }}>{"\u2717"}</span>
+                            ) : <span style={{ color: T.textDim, fontSize: 10 }}>{"\u2013"}</span>}
+                          </td>
+                        )
+                      })}
+                      <td style={{ ...S.td, textAlign: 'center', verticalAlign: 'middle' }}><button onClick={(e) => { e.stopPropagation(); setReportCompany(co) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 0, color: T.textDim }} title="Fehlbericht">{"\uD83D\uDCCB"}</button></td>
+                    </tr>
+                    {isExpanded && (<tr><td colSpan={visibleDates.length + 3} style={{ padding: 0 }}><CompanyStats companyId={co.id} companies={companies} checkins={checkins} schoolDays={schoolDays} /></td></tr>)}
+                  </React.Fragment>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
-        {selectedWeek && !selectedWeek.holiday && (() => {
-          const visibleDates = selectedWeek.dates.filter(d => { const day = new Date(d).getDay(); if (!showHiddenDays && hiddenDays.includes(day)) return false; return true })
-          return (<div style={{ overflowX: 'auto' }}><table style={{ ...S.table, marginBottom: 0 }}><thead><tr><th style={{ ...S.th, minWidth: 60 }}>K{"\u00FC"}rzel</th><th style={{ ...S.th, minWidth: 130 }}>Betrieb</th>{visibleDates.map(d => { const day = new Date(d).getDay(); const isHidden = hiddenDays.includes(day); return (<th key={d} style={{ ...S.th, textAlign: 'center', minWidth: 90, background: isHidden ? T.school : 'transparent', color: d === todayStr ? T.accent : T.textDim }}>{WEEKDAYS[day]} {formatDate(d)}{schoolDays.includes(day) && <div style={{ fontSize: 8, color: T.textDim }}>Schule</div>}{day === 6 && <div style={{ fontSize: 8, color: T.textDim }}>Sa</div>}{day === 0 && <div style={{ fontSize: 8, color: T.textDim }}>So</div>}</th>) })}<th style={{ ...S.th, width: 30 }}></th></tr></thead>
-          <tbody>{companies.map(co => { const isExpanded = expandedCompany === co.id; return (<React.Fragment key={co.id}><tr style={{ height: 40 }}><td style={{ ...S.td, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace", cursor: 'pointer', verticalAlign: 'middle' }} onClick={() => setExpandedCompany(isExpanded ? null : co.id)}>{co.code}</td><td style={{ ...S.td, color: T.text, cursor: 'pointer', verticalAlign: 'middle' }} onClick={() => setExpandedCompany(isExpanded ? null : co.id)}>{co.name} <span style={{ color: T.textDim, fontSize: 11 }}>{isExpanded ? "\u25B2" : "\u25BC"}</span></td>
-          {visibleDates.map(d => { const day = new Date(d).getDay(); const isHidden = hiddenDays.includes(day); const ci = checkins.find(c => c.companyId === co.id && c.date === d); const bgCol = isHidden ? T.school : 'transparent'; return (<td key={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: 'pointer', verticalAlign: 'middle' }} onClick={() => { if (ci) deleteCheckin(co.id, d); else manualCheckin(co.id, d, true) }} title={ci ? (ci.time + (ci.manual ? ' (manuell)' : '') + ' \u2013 Klicken zum Entfernen') : 'Klicken f\u00fcr manuellen Eintrag'}>{ci ? (<span style={{ ...S.badge, background: ci.nfcVerified ? T.successDim : T.warningDim, color: ci.nfcVerified ? T.success : T.warning, fontSize: 11 }}>{ci.time === 'manuell' ? '\u270E' : ci.time} {ci.nfcVerified ? '\u2713' : '\u26A0'}</span>) : d <= todayStr && !isHidden ? (<span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 11 }}>{"\u2717"}</span>) : <span style={{ color: T.textDim, fontSize: 11 }}>{"\u2013"}</span>}</td>) })}
-          <td style={{ ...S.td, textAlign: 'center', verticalAlign: 'middle' }}><button onClick={(e) => { e.stopPropagation(); setReportCompany(co) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 0, color: T.textDim }} title="Fehlbericht">{"\uD83D\uDCCB"}</button></td></tr>
-          {isExpanded && (<tr><td colSpan={visibleDates.length + 3} style={{ padding: 0 }}><CompanyStats companyId={co.id} companies={companies} checkins={checkins} schoolDays={schoolDays} /></td></tr>)}</React.Fragment>) })}</tbody></table></div>)
-        })()}
       </div>
     </div>
   )
