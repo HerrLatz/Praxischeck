@@ -339,15 +339,15 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
                         const isNewWeek = di > 0 && getWeekLabel(getMonday(new Date(d + 'T12:00:00'))) !== getWeekLabel(getMonday(new Date(visibleDates[di - 1] + 'T12:00:00')))
                         const bgCol = isToday ? T.accentDim + '11' : isHoliday ? T.warningDim + '11' : isHidden ? T.school : 'transparent'
                         return (
-                          <td key={d} data-date={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: outsideRange ? 'default' : 'pointer', verticalAlign: 'middle', minWidth: colW, borderLeft: isNewWeek ? `2px solid ${T.accent}44` : undefined }}
+                          <td key={d} data-date={d} style={{ ...S.td, textAlign: 'center', background: bgCol, cursor: outsideRange ? 'default' : 'pointer', verticalAlign: 'middle', minWidth: colW, height: 38, padding: '4px 6px', borderLeft: isNewWeek ? `2px solid ${T.accent}44` : undefined }}
                             onClick={() => { if (outsideRange) return; if (ci) deleteCheckin(co.id, d); else manualCheckin(co.id, d, true) }}
                             title={outsideRange ? 'Au\u00dferhalb Praktikumszeitraum' : ci ? (ci.time + (ci.manual ? ' (manuell)' : '') + ' \u2013 Klicken zum Entfernen') : 'Klicken f\u00fcr manuellen Eintrag'}>
                             {outsideRange ? <span style={{ color: T.textDim, fontSize: 9 }}>{"\u00B7"}</span> : ci ? (
-                              <span style={{ ...S.badge, background: ci.nfcVerified ? T.successDim : T.warningDim, color: ci.nfcVerified ? T.success : T.warning, fontSize: 10 }}>
+                              <span style={{ ...S.badge, background: ci.nfcVerified ? T.successDim : T.warningDim, color: ci.nfcVerified ? T.success : T.warning, fontSize: 10, lineHeight: '16px', display: 'inline-block', height: 20, overflow: 'hidden' }}>
                                 {ci.time === 'manuell' ? '\u270E' : ci.time} {ci.nfcVerified ? '\u2713' : '\u26A0'}
                               </span>
                             ) : d <= todayStr && !isHidden && !isHoliday ? (
-                              <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 10 }}>{"\u2717"}</span>
+                              <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 10, lineHeight: '16px', display: 'inline-block', height: 20 }}>{"\u2717"}</span>
                             ) : <span style={{ color: T.textDim, fontSize: 10 }}>{"\u2013"}</span>}
                           </td>
                         )
