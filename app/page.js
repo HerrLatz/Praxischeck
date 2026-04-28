@@ -366,7 +366,7 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
   )
 }
 
-// â”€â”€â”€ COMPANY STATS (NEU) â”€â”€â”€
+// ─── COMPANY STATS (NEU) ───
 function CompanyStats({ companyId, companies, checkins, schoolDays }) {
   const company = companies.find(c => c.id === companyId)
   if (!company) return null
@@ -478,7 +478,7 @@ function Companies({ companies, apiCompanies, showToast, userRole, userKlasse })
   )
 }
 
-// â”€â”€â”€ ANALYSE â”€â”€â”€
+// ─── ANALYSE ───
 function AnalyseView({ companies, checkins, schoolDays }) {
   const [klasseFilter, setKlasseFilter] = useState('')
   const todayStr = new Date().toISOString().split('T')[0]
@@ -524,7 +524,7 @@ function AnalyseView({ companies, checkins, schoolDays }) {
   const gesamt = allStats.reduce((a, s) => ({ t: a.t + s.totalDays, a: a.a + s.attended, n: a.n + s.nfc, q: a.q + s.qrOnly }), { t: 0, a: 0, n: 0, q: 0 })
   const gesamtPct = gesamt.t > 0 ? Math.round((gesamt.a / gesamt.t) * 100) : 0
 
-  // AuffÃ¤lligkeiten
+  // Auffälligkeiten
   const highAbsence = filteredStats.filter(s => s.pct < 70).sort((a, b) => a.pct - b.pct)
   const patternIssues = filteredStats.filter(s => s.missingDayPattern.length > 0)
   const neverNfcList = filteredStats.filter(s => s.neverNfc)
@@ -632,7 +632,7 @@ function AnalyseView({ companies, checkins, schoolDays }) {
         </div>
       </div>
 
-      {/* AuffÃ¤lligkeiten */}
+      {/* Auffälligkeiten */}
       <div style={{ ...S.card, borderColor: T.danger + '33' }}>
         <h3 style={{ fontSize: 12, color: T.danger, marginBottom: 16, textTransform: 'uppercase' }}>Auff&auml;lligkeiten</h3>
 
