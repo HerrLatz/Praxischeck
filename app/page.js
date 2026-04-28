@@ -429,7 +429,9 @@ function Companies({ companies, apiCompanies, showToast, userRole, userKlasse })
   const [trashData, setTrashData] = useState([])
   const [trashLoading, setTrashLoading] = useState(false)
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-  const nextCode = () => { const used = companies.map(c => c.code); for (let i = 1; i < 1000; i++) { const cd = String(i).padStart(3, '0'); if (!used.includes(cd)) return cd } return '999' }
+  const klasseSuffix = { BPA: 'A', BPB: 'B', BPD: 'D', BPE: 'E' }
+  const getCodeSuffix = () => { const kl = userRole === 'lehrer' ? userKlasse : form.klasse; return klasseSuffix[kl] || '' }
+  const nextCode = () => { const suffix = getCodeSuffix(); const used = companies.map(c => c.code); for (let i = 1; i < 1000; i++) { const cd = String(i).padStart(3, '0') + suffix; if (!used.includes(cd)) return cd } return '999' + suffix }
   const submit = async () => { if (!form.name.trim()) return; const code = form.code.trim() || nextCode(); const klasse = userRole === 'lehrer' ? userKlasse : form.klasse; const sd = form.startDate || '2026-04-13'; const ed = form.endDate || '2026-07-17'; if (editId) { await apiCompanies('update', { ...form, klasse, code, startDate: sd, endDate: ed, id: editId }); showToast('Betrieb aktualisiert') } else { await apiCompanies('add', { id: Date.now().toString(), ...form, klasse, code, startDate: sd, endDate: ed }); showToast('Betrieb hinzugef\u00fcgt') }; setForm({ name: '', code: '', klasse: userKlasse || '', startDate: '2026-04-13', endDate: '2026-07-17' }); setShowForm(false); setEditId(null) }
 
   const loadTrash = async (company) => { setTrashCompany(company); setTrashLoading(true); try { const res = await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company.id, action: 'get_trash' }) }); const data = await res.json(); setTrashData(Array.isArray(data) ? data.sort((a,b) => b.date.localeCompare(a.date)) : []) } catch { setTrashData([]) }; setTrashLoading(false) }
@@ -443,7 +445,7 @@ function Companies({ companies, apiCompanies, showToast, userRole, userKlasse })
 
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
-      <div style={S.header}><div><h1 style={S.h1}>Betriebe{userRole === 'lehrer' ? ` \u2013 ${userKlasse}` : ''}</h1></div><button style={S.btnPrimary} onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', code: nextCode(), klasse: userKlasse || '', startDate: '2026-04-13', endDate: '2026-07-17' }) }}>+ Hinzuf&uuml;gen</button></div>
+      <div style={S.header}><div><h1 style={S.h1}>Betriebe{userRole === 'lehrer' ? ` \u2013 ${userKlasse}` : ''}</h1></div><button style={S.btnPrimary} onClick={() => { const kl = userKlasse || ''; const suf = klasseSuffix[kl] || ''; const used = companies.map(c => c.code); let cd = '001' + suf; for (let i = 1; i < 1000; i++) { cd = String(i).padStart(3, '0') + suf; if (!used.includes(cd)) break }; setShowForm(true); setEditId(null); setForm({ name: '', code: cd, klasse: kl, startDate: '2026-04-13', endDate: '2026-07-17' }) }}>+ Hinzuf&uuml;gen</button></div>
 
       {userRole === 'admin' && (<div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
