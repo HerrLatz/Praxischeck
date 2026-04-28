@@ -139,11 +139,14 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
   const [schoolDays, setSchoolDays] = useState(DEFAULT_SCHOOL_DAYS)
+  const [classSchoolDays, setClassSchoolDays] = useState({ BPA: [1,2], BPB: [2,3], BPC: [3,4], BPD: [4,5], BPE: [1,5] })
   const [classFilter, setClassFilter] = useState('')
   const [showSettings, setShowSettings] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => { const saved = localStorage.getItem('pk-auth-data'); if (saved) { try { const data = JSON.parse(saved); setAuthed(true); setUserRole(data.role); setUserKlasse(data.klasse); setUserName(data.username); if (data.klasse) setClassFilter(data.klasse) } catch { localStorage.removeItem('pk-auth-data') } } }, [])
+
+  useEffect(() => { fetch('/api/class-settings').then(r => r.json()).then(d => { if (d && typeof d === 'object' && !d.error) setClassSchoolDays(d) }).catch(() => {}) }, [])
 
   const handleLogin = (data) => { localStorage.setItem('pk-auth', data.token); localStorage.setItem('pk-auth-data', JSON.stringify({ role: data.role, klasse: data.klasse, username: data.username })); setAuthed(true); setUserRole(data.role); setUserKlasse(data.klasse); setUserName(data.username); if (data.klasse) setClassFilter(data.klasse) }
 
@@ -189,18 +192,18 @@ export default function AdminPage() {
       <main className="main-content" style={S.main}>
         {userRole === 'admin' && (<div style={{ display:'flex',gap:8,marginBottom:20,flexWrap:'wrap',alignItems:'center' }}><span style={{ fontSize:12,color:T.textDim }}>Klasse:</span><button onClick={() => setClassFilter('')} style={{ ...S.filterBtn, ...(classFilter === '' ? S.filterActive : {}) }}>Alle</button>{CLASSES.map(c => <button key={c} onClick={() => setClassFilter(c)} style={{ ...S.filterBtn, ...(classFilter === c ? S.filterActive : {}) }}>{c}</button>)}</div>)}
         {userRole === 'lehrer' && (<div style={{ display:'flex',gap:8,marginBottom:20,alignItems:'center' }}><span style={{ fontSize:12,color:T.textDim }}>Klasse:</span><span style={{ ...S.filterBtn, ...S.filterActive, cursor:'default' }}>{userKlasse}</span></div>)}
-        {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }} />}
+        {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, classSchoolDays, manualCheckin, deleteCheckin, refresh }} />}
         {view === 'companies' && <Companies {...{ companies: (userRole === 'lehrer' ? companies.filter(c => c.klasse === userKlasse) : companies).slice().sort((a, b) => a.name.localeCompare(b.name, 'de')), allCompanies: companies, apiCompanies, showToast, userRole, userKlasse }} />}
-        {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, schoolDays }} />}
-        {view === 'analyse' && <AnalyseView {...{ companies, checkins, schoolDays }} />}
-        {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, resetData, companies }} />}
+        {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, schoolDays, classSchoolDays }} />}
+        {view === 'analyse' && <AnalyseView {...{ companies, checkins, schoolDays, classSchoolDays }} />}
+        {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDays, resetData, companies }} />}
         {archivedCompanies.length > 0 && (view === 'dashboard' || view === 'export') && (<div style={{ marginTop: 8 }}><button style={{ ...S.btnSmall, color: showArchived ? T.accent : T.textDim }} onClick={() => setShowArchived(!showArchived)}>{showArchived ? `Archiv ausblenden (${archivedCompanies.length})` : `Archiv anzeigen (${archivedCompanies.length})`}</button></div>)}
       </main>
     </div>
   )
 }
 
-function Dashboard({ companies, allCompanies, checkins, schoolDays, manualCheckin, deleteCheckin, refresh }) {
+function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolDays, manualCheckin, deleteCheckin, refresh }) {
   const [expandedCompany, setExpandedCompany] = useState(null)
   const [showHiddenDays, setShowHiddenDays] = useState(false)
   const [reportCompany, setReportCompany] = useState(null)
@@ -354,7 +357,7 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
                       })}
                       <td style={{ ...S.td, textAlign: 'center', verticalAlign: 'middle' }}><button onClick={(e) => { e.stopPropagation(); setReportCompany(co) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 0, color: T.textDim }} title="Fehlbericht">{"\uD83D\uDCCB"}</button></td>
                     </tr>
-                    {isExpanded && (<tr><td colSpan={visibleDates.length + 3} style={{ padding: 0 }}><CompanyStats companyId={co.id} companies={companies} checkins={checkins} schoolDays={schoolDays} /></td></tr>)}
+                    {isExpanded && (<tr><td colSpan={visibleDates.length + 3} style={{ padding: 0 }}><CompanyStats companyId={co.id} companies={companies} checkins={checkins} schoolDays={schoolDays} classSchoolDays={classSchoolDays} /></td></tr>)}
                   </React.Fragment>
                 )
               })}
@@ -367,10 +370,11 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, manualChecki
 }
 
 // ─── COMPANY STATS (NEU) ───
-function CompanyStats({ companyId, companies, checkins, schoolDays }) {
+function CompanyStats({ companyId, companies, checkins, schoolDays, classSchoolDays }) {
   const company = companies.find(c => c.id === companyId)
   if (!company) return null
-  const DEFAULT_PRACTICE = [1, 2, 5]
+  const companySchoolDays = (classSchoolDays && company.klasse && classSchoolDays[company.klasse]) || schoolDays
+  const DEFAULT_PRACTICE = [1,2,3,4,5].filter(d => !companySchoolDays.includes(d))
   const [practiceDays, setPracticeDays] = useState(DEFAULT_PRACTICE)
   const [chartMiddleDays, setChartMiddleDays] = useState(DEFAULT_PRACTICE)
   const companyStart = company.startDate || PROJECT_START
@@ -478,13 +482,14 @@ function Companies({ companies, allCompanies, apiCompanies, showToast, userRole,
 }
 
 // ─── ANALYSE ───
-function AnalyseView({ companies, checkins, schoolDays }) {
+function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
   const [klasseFilter, setKlasseFilter] = useState('')
   const todayStr = new Date().toISOString().split('T')[0]
-  const practiceDayNums = [1,2,3,4,5].filter(d => !schoolDays.includes(d))
   const activeCompanies = companies.filter(c => !c.archived)
 
   function getCompanyStats(co) {
+    const coSchoolDays = (classSchoolDays && co.klasse && classSchoolDays[co.klasse]) || schoolDays
+    const practiceDayNums = [1,2,3,4,5].filter(d => !coSchoolDays.includes(d))
     const sd = co.startDate || PROJECT_START
     const ed = co.endDate || '2026-07-17'
     const effectiveEnd = ed < todayStr ? ed : todayStr
@@ -534,10 +539,15 @@ function AnalyseView({ companies, checkins, schoolDays }) {
   for (let i = 5; i >= 0; i--) {
     const m = getMonday(new Date(now.getTime() - i * 7 * 86400000))
     const dates = getWeekDatesFromMonday(m)
-    const practiceDates = dates.filter(d => { const day = new Date(d + 'T12:00:00').getDay(); return practiceDayNums.includes(day) && !isInHoliday(d) })
-    const relevantCompanies = activeCompanies.filter(c => { const sd = c.startDate || PROJECT_START; const ed = c.endDate || '2026-07-17'; return practiceDates.some(d => d >= sd && d <= ed) })
-    const possible = relevantCompanies.length * practiceDates.length
-    const actual = checkins.filter(c => practiceDates.includes(c.date) && relevantCompanies.some(co => co.id === c.companyId)).length
+    let possible = 0, actual = 0
+    activeCompanies.forEach(co => {
+      const coSD = (classSchoolDays && co.klasse && classSchoolDays[co.klasse]) || schoolDays
+      const coPractice = [1,2,3,4,5].filter(d => !coSD.includes(d))
+      const sd = co.startDate || PROJECT_START; const ed = co.endDate || '2026-07-17'
+      const practiceDates = dates.filter(d => { const day = new Date(d + 'T12:00:00').getDay(); return coPractice.includes(day) && !isInHoliday(d) && d >= sd && d <= ed })
+      possible += practiceDates.length
+      actual += checkins.filter(c => c.companyId === co.id && practiceDates.includes(c.date)).length
+    })
     weekTrend.push({ name: getWeekLabel(m), quote: possible > 0 ? Math.round((actual / possible) * 100) : 0 })
   }
 
@@ -682,8 +692,14 @@ function ExportView({ companies, checkins, schoolDays }) {
   return (<div style={{ animation: 'fadeIn .3s ease' }}><div style={S.header}><h1 style={S.h1}>CSV-Export</h1><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><span style={{ fontSize: 13, color: T.textMuted }}>Zeitraum:</span><select style={{ ...S.input, width: 'auto' }} value={weeksBack} onChange={e => setWeeksBack(Number(e.target.value))}><option value={1}>Aktuelle Woche</option><option value={2}>2 Wochen</option><option value={4}>4 Wochen</option><option value={8}>8 Wochen</option><option value={52}>Ganzes Jahr</option></select></div></div><div style={S.card}><p style={{ color: T.textMuted, fontSize: 14, marginBottom: 16 }}>Die CSV enth&auml;lt: K&uuml;rzel, Betriebsname, Klasse und f&uuml;r jeden Tag den Check-in-Status.</p><button style={S.btnPrimary} onClick={downloadCSV}>{"\u2193"} CSV herunterladen</button></div></div>)
 }
 
-function Settings({ schoolDays, setSchoolDays, resetData, companies }) {
-  const toggleDay = (day) => { setSchoolDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]) }
+function Settings({ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDays, resetData, companies }) {
+  const toggleClassDay = async (klasse, day) => {
+    const current = classSchoolDays[klasse] || []
+    const updated = current.includes(day) ? current.filter(d => d !== day) : [...current, day].sort()
+    const newSettings = { ...classSchoolDays, [klasse]: updated }
+    setClassSchoolDays(newSettings)
+    await fetch('/api/class-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ klasse, schoolDays: updated }) })
+  }
   const [weeksOld, setWeeksOld] = useState(4)
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
@@ -700,13 +716,20 @@ function Settings({ schoolDays, setSchoolDays, resetData, companies }) {
     <div style={{ animation: 'fadeIn .3s ease' }}>
       <h1 style={{ ...S.h1, marginBottom: 24 }}>Einstellungen</h1>
       <div style={S.card}>
-        <h2 style={S.h2}>Schultage festlegen</h2>
-        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 12 }}>An Schultagen wird kein Check-in erwartet.</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[['Mo',1],['Di',2],['Mi',3],['Do',4],['Fr',5],['Sa',6]].map(([label,day]) => (
-            <button key={day} onClick={() => toggleDay(day)} style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${schoolDays.includes(day) ? T.accent : T.border}`, background: schoolDays.includes(day) ? T.accentDim + '44' : T.surfaceLight, color: schoolDays.includes(day) ? T.accent : T.textMuted, fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>{label} {schoolDays.includes(day) ? '\u2713' : ''}</button>
-          ))}
-        </div>
+        <h2 style={S.h2}>Schultage pro Klasse</h2>
+        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>An Schultagen wird kein Check-in erwartet. Praktikumstage sind alle anderen Werktage.</p>
+        {CLASSES.map(cls => (
+          <div key={cls} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${T.border}22` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, color: T.accent, width: 40 }}>{cls}</span>
+              {[['Mo',1],['Di',2],['Mi',3],['Do',4],['Fr',5]].map(([label,day]) => {
+                const active = (classSchoolDays[cls] || []).includes(day)
+                return <button key={day} onClick={() => toggleClassDay(cls, day)} style={{ padding: '4px 12px', borderRadius: 6, border: `1px solid ${active ? T.accent : T.border}`, background: active ? T.accentDim + '44' : T.surfaceLight, color: active ? T.accent : T.textDim, fontSize: 12, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>{label}{active ? ' \u2713' : ''}</button>
+              })}
+              <span style={{ fontSize: 10, color: T.textDim }}>Praktikum: {[['Mo',1],['Di',2],['Mi',3],['Do',4],['Fr',5]].filter(([,d]) => !(classSchoolDays[cls] || []).includes(d)).map(([l]) => l).join(', ')}</span>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div style={sectionCard}>
