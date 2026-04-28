@@ -445,7 +445,7 @@ function Companies({ companies, allCompanies, apiCompanies, showToast, userRole,
 
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
-      <div style={S.header}><div><h1 style={S.h1}>Betriebe{userRole === 'lehrer' ? ` \u2013 ${userKlasse}` : ''}</h1></div><button style={S.btnPrimary} onClick={() => { const used = companies.map(c => c.code); let cd = '001'; for (let i = 1; i < 1000; i++) { cd = String(i).padStart(3, '0'); if (!used.includes(cd)) break }; setShowForm(true); setEditId(null); setForm({ name: '', code: cd, klasse: userKlasse || '', startDate: todayDate(), endDate: '2026-07-17' }) }}>+ Hinzuf&uuml;gen</button></div>
+      <div style={S.header}><div><h1 style={S.h1}>Betriebe{userRole === 'lehrer' ? ` \u2013 ${userKlasse}` : ''}</h1></div><button style={S.btnPrimary} onClick={() => { let cd = '001'; for (let i = 1; i < 1000; i++) { cd = String(i).padStart(3, '0'); if (!allCodes.includes(cd)) break }; setShowForm(true); setEditId(null); setForm({ name: '', code: cd, klasse: userKlasse || '', startDate: todayDate(), endDate: '2026-07-17' }) }}>+ Hinzuf&uuml;gen</button></div>
 
       {userRole === 'admin' && (<div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
