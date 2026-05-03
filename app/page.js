@@ -51,6 +51,10 @@ function getWeekDatesFromMonday(monday) {
   })
 }
 
+function fmtDateStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
 const NRW_FERIEN = [
   ['2026-03-30', '2026-04-11'],
   ['2026-05-26', '2026-05-26'],
@@ -100,7 +104,29 @@ function formatDate(d) {
   return `${d.split('-')[2]}.${d.split('-')[1]}.`
 }
 
-const CSS = `*{box-sizing:border-box;margin:0;padding:0} body{background:${T.bg};overflow-x:hidden} ::-webkit-scrollbar{width:6px;height:6px} ::-webkit-scrollbar-track{background:${T.surface}} ::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px} input:focus,select:focus{outline:none;border-color:${T.accent}!important;box-shadow:0 0 0 3px ${T.accent}22} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}} @keyframes slideIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}} @keyframes toastIn{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}} .week-scroll{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:thin} .week-col{scroll-snap-align:start;flex-shrink:0} @media(max-width:768px){ .app-layout{flex-direction:column!important} .sidebar{width:100%!important;min-width:100%!important;height:auto!important;position:relative!important;flex-direction:row!important;padding:8px!important;overflow-x:auto!important} .sidebar .logo-area,.sidebar .legend,.sidebar .stats-info,.sidebar .divider-line{display:none!important} .sidebar .nav-section{flex-direction:row!important;gap:2px!important} .sidebar .nav-section button{padding:8px 12px!important;font-size:12px!important;border-left:none!important;border-bottom:2px solid transparent!important;white-space:nowrap!important} .main-content{padding:12px!important} .stats-grid{grid-template-columns:repeat(2,1fr)!important;gap:8px!important} .stat-card{padding:14px!important} .stat-value{font-size:24px!important} }`
+const CSS = `*{box-sizing:border-box;margin:0;padding:0} body{background:${T.bg};overflow-x:hidden} ::-webkit-scrollbar{width:6px;height:6px} ::-webkit-scrollbar-track{background:${T.surface}} ::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px} input:focus,select:focus{outline:none;border-color:${T.accent}!important;box-shadow:0 0 0 3px ${T.accent}22} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}} @keyframes slideIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}} @keyframes toastIn{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}} .week-scroll{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:thin} .week-col{scroll-snap-align:start;flex-shrink:0} .desktop-only{display:block} .mobile-only{display:none} @media(max-width:768px){ .app-layout{flex-direction:column!important} .sidebar{width:100%!important;min-width:100%!important;height:auto!important;position:relative!important;flex-direction:row!important;padding:8px!important;overflow-x:auto!important} .sidebar .logo-area,.sidebar .legend,.sidebar .stats-info,.sidebar .divider-line,.sidebar .footer-area{display:none!important} .sidebar .nav-section{flex-direction:row!important;gap:2px!important} .sidebar .nav-section button{padding:8px 12px!important;font-size:12px!important;border-left:none!important;border-bottom:2px solid transparent!important;white-space:nowrap!important} .main-content{padding:12px!important} .stats-grid{grid-template-columns:repeat(2,1fr)!important;gap:8px!important} .stat-card{padding:14px!important} .stat-value{font-size:24px!important} } @media(max-width:480px){ .desktop-only{display:none!important} .mobile-only{display:block!important} }`
+
+// Mobile-Erkennung
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 480)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return isMobile
+}
+
+// Passwort-bestätigtes Löschen (Admin oder eigene Klasse als Lehrer)
+async function confirmWithPassword(username) {
+  const pw = prompt('Bitte Passwort eingeben:')
+  if (!pw) return false
+  const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password: pw }) })
+  const d = await r.json()
+  if (!d.ok) { alert('Falsches Passwort!'); return false }
+  return true
+}
 
 function LoginScreen({ onLogin }) {
   const [user, setUser] = useState('')
@@ -141,7 +167,6 @@ export default function AdminPage() {
   const [schoolDays, setSchoolDays] = useState(DEFAULT_SCHOOL_DAYS)
   const [classSchoolDays, setClassSchoolDays] = useState({ BPA: [1,2], BPB: [2,3], BPC: [3,4], BPD: [4,5], BPE: [1,5] })
   const [classFilter, setClassFilter] = useState('')
-  const [showSettings, setShowSettings] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => { const saved = localStorage.getItem('pk-auth-data'); if (saved) { try { const data = JSON.parse(saved); setAuthed(true); setUserRole(data.role); setUserKlasse(data.klasse); setUserName(data.username); if (data.klasse) setClassFilter(data.klasse) } catch { localStorage.removeItem('pk-auth-data') } } }, [])
@@ -158,7 +183,18 @@ export default function AdminPage() {
   const apiCompanies = async (action, company, id) => { await fetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, company, id }) }); refresh() }
   const manualCheckin = async (companyId, date, nfcVerified) => { await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, date, nfcVerified }) }); refresh(); showToast('Anwesenheit manuell eingetragen') }
   const deleteCheckin = async (companyId, date) => { if (!confirm('Anwesenheit f\u00fcr diesen Tag entfernen?')) return; await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, date, action: 'delete' }) }); refresh(); showToast('Anwesenheit entfernt') }
-  const resetData = async (payload) => { const pw = prompt('Bitte Admin-Passwort eingeben:'); if (!pw) return; const authCheck = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: pw }) }); const authData = await authCheck.json(); if (!authData.ok) { alert('Falsches Passwort!'); return }; if (!confirm('Wirklich unwiderruflich l\u00f6schen?')) return; const res = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await res.json(); refresh(); showToast(data.deleted !== undefined ? `${data.deleted} Eintr\u00e4ge gel\u00f6scht` : 'Gel\u00f6scht') }
+
+  // Lösch-Funktion mit Passwort: Admin nutzt 'admin'-User, Lehrer nutzt eigenen User
+  const resetData = async (payload) => {
+    const ok = await confirmWithPassword(userRole === 'admin' ? 'admin' : userKlasse)
+    if (!ok) return
+    if (!confirm('Wirklich unwiderruflich l\u00f6schen?')) return
+    const res = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const data = await res.json()
+    refresh()
+    showToast(data.deleted !== undefined ? `${data.deleted} Eintr\u00e4ge gel\u00f6scht` : 'Gel\u00f6scht')
+  }
+
   const logout = () => { localStorage.removeItem('pk-auth'); localStorage.removeItem('pk-auth-data'); setAuthed(false); setUserRole(null); setUserKlasse(null); setUserName('') }
 
   if (!authed) return <><style>{CSS}</style><LoginScreen onLogin={handleLogin} /></>
@@ -174,7 +210,7 @@ export default function AdminPage() {
       <nav className="sidebar" style={S.sidebar}>
         <div className="logo-area" style={S.logo}><div style={S.logoIcon}>{"\u2713"}</div><div><div style={S.logoText}>PraxisCheck</div><div style={S.logoSub}>{userName || 'Admin'}</div></div></div>
         <div className="nav-section" style={S.navSection}>
-          {[['dashboard','\u25C9','Dashboard'],['companies','\u25C6','Betriebe'],['analyse','\u25A3','Analyse'],['export','\u2193','CSV-Export'],['settings','\u2699','Einstellungen']].filter(([k]) => { if (userRole === 'lehrer' && k === 'settings') return false; return true }).map(([k,i,l]) => (
+          {[['dashboard','\u25C9','Dashboard'],['companies','\u25C6','Betriebe'],['analyse','\u25A3','Analyse'],['export','\u2193','Export'],['settings','\u2699','Einstellungen']].map(([k,i,l]) => (
             <button key={k} onClick={() => setView(k)} style={{ ...S.navItem, ...(view === k ? S.navActive : {}) }}><span style={S.navIcon}>{i}</span>{l}</button>
           ))}
         </div>
@@ -188,22 +224,28 @@ export default function AdminPage() {
           </div>
           <button onClick={logout} style={{ ...S.btnSmall, width: '100%', marginTop: 12, color: T.danger }}>Abmelden</button>
         </div>
+        <div className="footer-area" style={{ padding: '8px 20px 12px', fontSize: 10, color: T.textDim, lineHeight: 1.4, textAlign: 'center' }}>
+          <div>erstellt von</div>
+          <div style={{ marginTop: 2 }}>Michael Gori&szlig;en</div>
+        </div>
       </nav>
       <main className="main-content" style={S.main}>
         {userRole === 'admin' && (<div style={{ display:'flex',gap:8,marginBottom:20,flexWrap:'wrap',alignItems:'center' }}><span style={{ fontSize:12,color:T.textDim }}>Klasse:</span><button onClick={() => setClassFilter('')} style={{ ...S.filterBtn, ...(classFilter === '' ? S.filterActive : {}) }}>Alle</button>{CLASSES.map(c => <button key={c} onClick={() => setClassFilter(c)} style={{ ...S.filterBtn, ...(classFilter === c ? S.filterActive : {}) }}>{c}</button>)}</div>)}
         {userRole === 'lehrer' && (<div style={{ display:'flex',gap:8,marginBottom:20,alignItems:'center' }}><span style={{ fontSize:12,color:T.textDim }}>Klasse:</span><span style={{ ...S.filterBtn, ...S.filterActive, cursor:'default' }}>{userKlasse}</span></div>)}
-        {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, classSchoolDays, manualCheckin, deleteCheckin, refresh }} />}
+        {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, classSchoolDays, classFilter, userRole, userKlasse, manualCheckin, deleteCheckin, refresh }} />}
         {view === 'companies' && <Companies {...{ companies: (userRole === 'lehrer' ? companies.filter(c => c.klasse === userKlasse) : companies).slice().sort((a, b) => a.name.localeCompare(b.name, 'de')), allCompanies: companies, apiCompanies, showToast, userRole, userKlasse }} />}
-        {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, schoolDays, classSchoolDays }} />}
-        {view === 'analyse' && <AnalyseView {...{ companies, checkins, schoolDays, classSchoolDays }} />}
-        {view === 'settings' && <Settings {...{ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDays, resetData, companies }} />}
+        {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, classSchoolDays, classFilter, userRole, userKlasse }} />}
+        {view === 'analyse' && <AnalyseView {...{ companies, checkins, schoolDays, classSchoolDays, userRole, userKlasse }} />}
+        {view === 'settings' && <Settings {...{ classSchoolDays, setClassSchoolDays, resetData, companies, userRole, userKlasse }} />}
         {archivedCompanies.length > 0 && (view === 'dashboard' || view === 'export') && (<div style={{ marginTop: 8 }}><button style={{ ...S.btnSmall, color: showArchived ? T.accent : T.textDim }} onClick={() => setShowArchived(!showArchived)}>{showArchived ? `Archiv ausblenden (${archivedCompanies.length})` : `Archiv anzeigen (${archivedCompanies.length})`}</button></div>)}
       </main>
     </div>
   )
 }
 
-function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolDays, manualCheckin, deleteCheckin, refresh }) {
+// ─── DASHBOARD ───
+function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolDays, classFilter, userRole, userKlasse, manualCheckin, deleteCheckin, refresh }) {
+  const isMobile = useIsMobile()
   const [expandedCompany, setExpandedCompany] = useState(null)
   const [showHiddenDays, setShowHiddenDays] = useState(false)
   const [reportCompany, setReportCompany] = useState(null)
@@ -212,14 +254,19 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
   const scrollRef = React.useRef(null)
   const todayRef = React.useRef(null)
   const todayStr = new Date().toISOString().split('T')[0]
-  const hiddenDays = [...schoolDays, 0, 6]
 
-  // Generate all dates from PROJECT_START to end of current week + 1
+  // Hidden days logic: Wenn Klassenfilter, nimm Schultage dieser Klasse; sonst (Admin "Alle") keine Werktage ausblenden
+  const effectiveClass = userRole === 'lehrer' ? userKlasse : classFilter
+  const classHiddenDays = effectiveClass ? (classSchoolDays[effectiveClass] || schoolDays) : []
+  const hiddenDays = [...classHiddenDays, 0, 6]
+
+  // Generate dates from PROJECT_START to end of CURRENT week (no future)
   const allDates = []
   const startD = new Date(PROJECT_START + 'T12:00:00')
-  const endD = new Date(getMonday(new Date()))
-  endD.setDate(endD.getDate() + 13)
-  for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+  const currentMonday = getMonday(new Date())
+  const currentSunday = new Date(currentMonday)
+  currentSunday.setDate(currentMonday.getDate() + 6)
+  for (let d = new Date(startD); d <= currentSunday; d.setDate(d.getDate() + 1)) {
     const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
     allDates.push(ds)
   }
@@ -256,21 +303,65 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
 
   React.useEffect(() => { const t = setTimeout(scrollToToday, 300); return () => clearTimeout(t) }, [])
 
-  // For report: determine which week is currently most visible
-  const getVisibleMonday = () => {
-    if (!scrollRef.current) return getMonday(new Date())
-    const box = scrollRef.current
-    const center = box.scrollLeft + box.clientWidth / 2
-    const cols = box.querySelectorAll('[data-date]')
-    let closest = null, closestDist = Infinity
-    cols.forEach(col => { const dist = Math.abs(col.offsetLeft - center); if (dist < closestDist) { closestDist = dist; closest = col.getAttribute('data-date') } })
-    return closest ? getMonday(new Date(closest + 'T12:00:00')) : getMonday(new Date())
+  // FIX: "Diese Woche" = aktuelle Kalenderwoche (nicht mehr Scroll-basiert)
+  const generateReport = async () => {
+    setReportLoading(true)
+    let startDate, endDate
+    const today = new Date()
+    const fmt = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+    const monday = getMonday(today)
+    const satOf = (mon) => { const s = new Date(mon); s.setDate(mon.getDate() + 5); return s }
+    if (reportRange === 'this_week') {
+      startDate = fmt(monday); endDate = fmt(satOf(monday))
+    } else if (reportRange === 'last_week') {
+      const lm = new Date(monday); lm.setDate(monday.getDate() - 7)
+      startDate = fmt(lm); endDate = fmt(satOf(lm))
+    } else if (reportRange === '2_weeks') {
+      const lm = new Date(monday); lm.setDate(monday.getDate() - 7)
+      startDate = fmt(lm); endDate = fmt(satOf(monday))
+    } else if (reportRange === '4_weeks') {
+      const lm = new Date(monday); lm.setDate(monday.getDate() - 21)
+      startDate = fmt(lm); endDate = fmt(satOf(monday))
+    } else {
+      startDate = PROJECT_START; endDate = fmt(satOf(monday))
+    }
+    // Use class-specific school days for the report
+    const reportSchoolDays = (reportCompany.klasse && classSchoolDays[reportCompany.klasse]) || schoolDays
+    try {
+      const res = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: reportCompany.id, startDate, endDate, schoolDays: reportSchoolDays }) })
+      if (!res.ok) throw new Error('Report failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = `Fehlbericht_${reportCompany.code}.docx`; a.click()
+      URL.revokeObjectURL(url); setReportCompany(null)
+    } catch (e) { alert('Fehler: ' + e.message) }
+    setReportLoading(false)
   }
-
-  const generateReport = async () => { setReportLoading(true); let startDate, endDate; const refMonday = getVisibleMonday(); refMonday.setHours(12,0,0,0); const fmt = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); const satOf = (mon) => { const s = new Date(mon); s.setDate(mon.getDate() + 5); return s }; if (reportRange === 'this_week') { startDate = fmt(refMonday); endDate = fmt(satOf(refMonday)) } else if (reportRange === 'last_week') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 7); startDate = fmt(lm); endDate = fmt(satOf(lm)) } else if (reportRange === '2_weeks') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 7); startDate = fmt(lm); endDate = fmt(satOf(refMonday)) } else if (reportRange === '4_weeks') { const lm = new Date(refMonday); lm.setDate(refMonday.getDate() - 21); startDate = fmt(lm); endDate = fmt(satOf(refMonday)) } else { startDate = PROJECT_START; endDate = fmt(satOf(refMonday)) }; try { const res = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: reportCompany.id, startDate, endDate, schoolDays }) }); if (!res.ok) throw new Error('Report failed'); const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Fehlbericht_${reportCompany.code}.docx`; a.click(); URL.revokeObjectURL(url); setReportCompany(null) } catch (e) { alert('Fehler: ' + e.message) }; setReportLoading(false) }
 
   const colW = 80
   const stickyStyle = (left, zIdx, bg) => ({ position: 'sticky', left, zIndex: zIdx, background: bg || T.surface })
+
+  // ─── Mobile Tagesansicht ───
+  if (isMobile) {
+    return (
+      <DashboardMobile
+        companies={companies}
+        checkins={checkins}
+        classSchoolDays={classSchoolDays}
+        manualCheckin={manualCheckin}
+        deleteCheckin={deleteCheckin}
+        setReportCompany={setReportCompany}
+        reportCompany={reportCompany}
+        reportRange={reportRange}
+        setReportRange={setReportRange}
+        reportLoading={reportLoading}
+        generateReport={generateReport}
+        checkedIn={checkedIn}
+        nfcCount={nfcCount}
+        qrCount={qrCount}
+      />
+    )
+  }
 
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
@@ -294,9 +385,8 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
       <div style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
         <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'visible', maxHeight: 'calc(100vh - 220px)' }}>
           <table style={{ ...S.table, marginBottom: 0, borderCollapse: 'separate', borderSpacing: 0 }}>
-            {/* KW header row */}
             <thead>
-              <tr>{/* sticky corners */}
+              <tr>
                 <th style={{ ...S.th, minWidth: 55, ...stickyStyle(0, 4, T.surface), borderRight: `1px solid ${T.border}` }}></th>
                 <th style={{ ...S.th, minWidth: 120, ...stickyStyle(55, 4, T.surface), borderRight: `1px solid ${T.border}` }}></th>
                 {weekHeaders.map((wh, wi) => (
@@ -369,7 +459,95 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
   )
 }
 
-// ─── COMPANY STATS (NEU) ───
+// ─── DASHBOARD MOBILE (Tagesansicht) ───
+function DashboardMobile({ companies, checkins, classSchoolDays, manualCheckin, deleteCheckin, setReportCompany, reportCompany, reportRange, setReportRange, reportLoading, generateReport, checkedIn, nfcCount, qrCount }) {
+  const [day, setDay] = useState(new Date())
+  const dayStr = fmtDateStr(day)
+  const todayStr = fmtDateStr(new Date())
+  const weekday = WEEKDAYS[day.getDay()]
+  const dayLabel = `${weekday}, ${day.getDate().toString().padStart(2,'0')}.${(day.getMonth()+1).toString().padStart(2,'0')}.${day.getFullYear()}`
+  const isToday = dayStr === todayStr
+
+  const shift = (n) => { const d = new Date(day); d.setDate(d.getDate() + n); setDay(d) }
+  const goToday = () => setDay(new Date())
+
+  const dayCI = checkins.filter(c => c.date === dayStr)
+  const inRange = (co) => (!co.startDate || dayStr >= co.startDate) && (!co.endDate || dayStr <= co.endDate)
+  const visible = companies.filter(co => {
+    if (!inRange(co)) return false
+    const cl = co.klasse
+    if (cl && classSchoolDays[cl]?.includes(day.getDay())) return false
+    return true
+  })
+
+  const isHoliday = isInHoliday(dayStr)
+  const isWeekend = day.getDay() === 0 || day.getDay() === 6
+
+  return (
+    <div style={{ animation: 'fadeIn .3s ease' }}>
+      {reportCompany && (<div style={S.modal} onClick={() => setReportCompany(null)}><div style={S.modalContent} onClick={e => e.stopPropagation()}><h3 style={{ ...S.h2, fontSize: 16, marginBottom: 4 }}>Fehlbericht erstellen</h3><p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>{reportCompany.code} {"\u2013"} {reportCompany.name}</p><div style={{ marginBottom: 16 }}><label style={S.label}>Zeitraum</label><select style={S.input} value={reportRange} onChange={e => setReportRange(e.target.value)}><option value="this_week">Diese Woche</option><option value="last_week">Letzte Woche</option><option value="2_weeks">Letzte 2 Wochen</option><option value="4_weeks">Letzte 4 Wochen</option><option value="all">Gesamter Zeitraum</option></select></div><div style={{ display: 'flex', gap: 8 }}><button style={{ ...S.btnPrimary, flex: 1, opacity: reportLoading ? 0.5 : 1 }} onClick={generateReport} disabled={reportLoading}>{reportLoading ? 'Wird erstellt...' : 'Word-Datei erstellen'}</button><button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setReportCompany(null)}>Abbrechen</button></div></div></div>)}
+
+      {/* Stats kompakt */}
+      <div style={{ ...S.card, padding: 14, marginBottom: 12, display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+        <div><div style={{ fontSize: 22, fontWeight: 700, color: T.success, fontFamily: "'Space Mono', monospace" }}>{checkedIn}</div><div style={{ fontSize: 10, color: T.textDim }}>Anwesend heute</div></div>
+        <div><div style={{ fontSize: 22, fontWeight: 700, color: T.danger, fontFamily: "'Space Mono', monospace" }}>{companies.length - checkedIn}</div><div style={{ fontSize: 10, color: T.textDim }}>Fehlt heute</div></div>
+        <div><div style={{ fontSize: 22, fontWeight: 700, color: T.accent, fontFamily: "'Space Mono', monospace" }}>{companies.length}</div><div style={{ fontSize: 10, color: T.textDim }}>Gesamt</div></div>
+      </div>
+
+      {/* Tages-Navigation */}
+      <div style={{ ...S.card, padding: 12, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <button style={{ ...S.btnSmall, fontSize: 18, padding: '6px 14px' }} onClick={() => shift(-1)}>{"\u25C0"}</button>
+        <div style={{ textAlign: 'center', flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: isToday ? T.accent : T.text }}>{dayLabel}</div>
+          {!isToday && <button style={{ ...S.btnSmall, marginTop: 6, color: T.accent, borderColor: T.accent }} onClick={goToday}>Heute</button>}
+        </div>
+        <button style={{ ...S.btnSmall, fontSize: 18, padding: '6px 14px' }} onClick={() => shift(1)}>{"\u25B6"}</button>
+      </div>
+
+      {isHoliday && <div style={{ ...S.card, padding: 14, marginBottom: 12, textAlign: 'center', color: T.warning, background: T.warningDim + '22', borderColor: T.warning + '44' }}>{"\uD83C\uDFD6"} {getHolidayName(dayStr)}</div>}
+      {isWeekend && <div style={{ ...S.card, padding: 14, marginBottom: 12, textAlign: 'center', color: T.textDim }}>Wochenende</div>}
+
+      {/* Betriebsliste */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {visible.length === 0 ? (
+          <div style={{ ...S.card, padding: 20, textAlign: 'center', color: T.textDim }}>Keine Praktikumstage f&uuml;r diesen Tag</div>
+        ) : visible.map(co => {
+          const ci = dayCI.find(c => c.companyId === co.id)
+          const status = ci ? (ci.nfcVerified ? 'nfc' : 'qr') : (dayStr <= todayStr ? 'missing' : 'pending')
+          const statusBg = status === 'nfc' ? T.successDim : status === 'qr' ? T.warningDim : status === 'missing' ? T.dangerDim : T.surfaceLight
+          const statusCol = status === 'nfc' ? T.success : status === 'qr' ? T.warning : status === 'missing' ? T.danger : T.textDim
+          const statusIcon = status === 'nfc' ? '\u2713' : status === 'qr' ? '\u26A0' : status === 'missing' ? '\u2717' : '\u2013'
+          const statusText = status === 'nfc' ? 'NFC' : status === 'qr' ? 'QR' : status === 'missing' ? 'fehlt' : 'offen'
+          return (
+            <div key={co.id} style={{ ...S.card, padding: 14, marginBottom: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, color: T.accent }}>{co.code}</span>
+                    {co.klasse && <span style={{ fontSize: 10, color: T.textDim }}>{co.klasse}</span>}
+                  </div>
+                  <div style={{ fontSize: 14, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{co.name}</div>
+                  {ci && <div style={{ fontSize: 10, color: T.textDim, marginTop: 2 }}>{ci.time}{ci.manual ? ' (manuell)' : ''}</div>}
+                </div>
+                <span style={{ ...S.badge, background: statusBg, color: statusCol, fontSize: 11, padding: '4px 10px' }}>{statusIcon} {statusText}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                {ci ? (
+                  <button style={{ ...S.btnSmall, flex: 1, color: T.danger }} onClick={() => deleteCheckin(co.id, dayStr)}>Entfernen</button>
+                ) : (
+                  <button style={{ ...S.btnSmall, flex: 1, color: T.success }} onClick={() => manualCheckin(co.id, dayStr, true)}>Manuell eintragen</button>
+                )}
+                <button style={{ ...S.btnSmall, flex: 1 }} onClick={() => setReportCompany(co)}>{"\uD83D\uDCCB"} Fehlbericht</button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── COMPANY STATS ───
 function CompanyStats({ companyId, companies, checkins, schoolDays, classSchoolDays }) {
   const company = companies.find(c => c.id === companyId)
   if (!company) return null
@@ -422,6 +600,7 @@ function CompanyStats({ companyId, companies, checkins, schoolDays, classSchoolD
   )
 }
 
+// ─── COMPANIES ───
 function Companies({ companies, allCompanies, apiCompanies, showToast, userRole, userKlasse }) {
   const [showForm, setShowForm] = useState(false)
   const todayDate = () => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0') }
@@ -440,7 +619,13 @@ function Companies({ companies, allCompanies, apiCompanies, showToast, userRole,
 
   const loadTrash = async (company) => { setTrashCompany(company); setTrashLoading(true); try { const res = await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: company.id, action: 'get_trash' }) }); const data = await res.json(); setTrashData(Array.isArray(data) ? data.sort((a,b) => b.date.localeCompare(a.date)) : []) } catch { setTrashData([]) }; setTrashLoading(false) }
   const restoreItem = async (item) => { await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: item.companyId, date: item.date, action: 'restore' }) }); showToast('Wiederhergestellt'); loadTrash(trashCompany) }
-  const deletePermanent = async (item) => { if (!confirm('Endg\u00fcltig l\u00f6schen?')) return; await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: item.companyId, date: item.date, action: 'delete_permanent' }) }); showToast('Endg\u00fcltig gel\u00f6scht'); loadTrash(trashCompany) }
+  const deletePermanent = async (item) => {
+    if (!confirm('Endg\u00fcltig l\u00f6schen?')) return
+    const ok = await confirmWithPassword(userRole === 'admin' ? 'admin' : userKlasse)
+    if (!ok) return
+    await fetch('/api/manual-checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: item.companyId, date: item.date, action: 'delete_permanent' }) })
+    showToast('Endg\u00fcltig gel\u00f6scht'); loadTrash(trashCompany)
+  }
 
   let filteredCompanies = companies
   if (userRole === 'admin' && klasseFilter) filteredCompanies = filteredCompanies.filter(c => c.klasse === klasseFilter)
@@ -476,16 +661,16 @@ function Companies({ companies, allCompanies, apiCompanies, showToast, userRole,
         <div style={{ marginTop: 16 }}><button style={{ ...S.btnGhost, width: '100%' }} onClick={() => setTrashCompany(null)}>Schlie&szlig;en</button></div>
       </div></div>)}
 
-      {filteredCompanies.length === 0 ? <div style={S.card}><Empty text="Keine Betriebe gefunden." /></div> : (<div style={{ display: 'grid', gap: 10 }}>{filteredCompanies.map(c => (<div key={c.id} style={{ ...S.card, padding: 16, opacity: c.archived ? 0.5 : 1 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, fontWeight: 700, color: T.accent }}>{c.code}</span><span style={{ color: T.text, fontSize: 15 }}>{c.name}</span>{c.klasse && <span style={{ ...S.badge, background: T.surfaceLight, color: T.textMuted, fontSize: 11 }}>{c.klasse}</span>}{c.startDate && <span style={{ fontSize: 10, color: T.textDim }}>{c.startDate.split('-').reverse().slice(0,2).join('.')}{"\u2013"}{(c.endDate || '17.07.').split('-').reverse().slice(0,2).join('.')}</span>}{c.archived && <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 10 }}>Archiviert</span>}</div><div style={{ display: 'flex', gap: 6 }}><button style={S.btnSmall} onClick={() => setShowQR(c)}>QR</button><button style={{ ...S.btnSmall, fontSize: 10 }} onClick={() => loadTrash(c)} title="Entfernte Check-ins">{"\uD83D\uDDD1"}</button><button style={S.btnSmall} onClick={() => { setForm({ name: c.name, code: c.code, klasse: c.klasse || '', startDate: c.startDate || '2026-04-13', endDate: c.endDate || '2026-07-17' }); setEditId(c.id); setShowForm(true) }}>{"\u270E"}</button><button style={{ ...S.btnSmall, color: c.archived ? T.success : T.warning }} onClick={async () => { await apiCompanies('update', { ...c, archived: !c.archived }); showToast(c.archived ? 'Betrieb wiederhergestellt' : 'Betrieb archiviert') }}>{c.archived ? '\u21A9' : '\uD83D\uDCE6'}</button><button style={{ ...S.btnSmall, color: T.danger }} onClick={async () => { if (!confirm(`Betrieb "${c.name}" wirklich l\u00f6schen?`)) return; const pw = prompt('Admin-Passwort eingeben:'); if (!pw) return; const authRes = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: pw }) }); const authData = await authRes.json(); if (!authData.ok) { alert('Falsches Passwort!'); return }; await apiCompanies('delete', null, c.id); showToast('Gel\u00f6scht') }}>{"\u2717"}</button></div></div></div>))}</div>)}
+      {filteredCompanies.length === 0 ? <div style={S.card}><Empty text="Keine Betriebe gefunden." /></div> : (<div style={{ display: 'grid', gap: 10 }}>{filteredCompanies.map(c => (<div key={c.id} style={{ ...S.card, padding: 16, opacity: c.archived ? 0.5 : 1 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ fontFamily: "'Space Mono', monospace", fontSize: 16, fontWeight: 700, color: T.accent }}>{c.code}</span><span style={{ color: T.text, fontSize: 15 }}>{c.name}</span>{c.klasse && <span style={{ ...S.badge, background: T.surfaceLight, color: T.textMuted, fontSize: 11 }}>{c.klasse}</span>}{c.startDate && <span style={{ fontSize: 10, color: T.textDim }}>{c.startDate.split('-').reverse().slice(0,2).join('.')}{"\u2013"}{(c.endDate || '17.07.').split('-').reverse().slice(0,2).join('.')}</span>}{c.archived && <span style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 10 }}>Archiviert</span>}</div><div style={{ display: 'flex', gap: 6 }}><button style={S.btnSmall} onClick={() => setShowQR(c)}>QR</button><button style={{ ...S.btnSmall, fontSize: 10 }} onClick={() => loadTrash(c)} title="Entfernte Check-ins">{"\uD83D\uDDD1"}</button><button style={S.btnSmall} onClick={() => { setForm({ name: c.name, code: c.code, klasse: c.klasse || '', startDate: c.startDate || '2026-04-13', endDate: c.endDate || '2026-07-17' }); setEditId(c.id); setShowForm(true) }}>{"\u270E"}</button><button style={{ ...S.btnSmall, color: c.archived ? T.success : T.warning }} onClick={async () => { await apiCompanies('update', { ...c, archived: !c.archived }); showToast(c.archived ? 'Betrieb wiederhergestellt' : 'Betrieb archiviert') }}>{c.archived ? '\u21A9' : '\uD83D\uDCE6'}</button><button style={{ ...S.btnSmall, color: T.danger }} onClick={async () => { if (!confirm(`Betrieb "${c.name}" wirklich l\u00f6schen?`)) return; const ok = await confirmWithPassword(userRole === 'admin' ? 'admin' : userKlasse); if (!ok) return; await apiCompanies('delete', null, c.id); showToast('Gel\u00f6scht') }}>{"\u2717"}</button></div></div></div>))}</div>)}
     </div>
   )
 }
 
-// ─── ANALYSE ───
-function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
-  const [klasseFilter, setKlasseFilter] = useState('')
+// ─── ANALYSE (Wochentag-Heatmap statt Badge-Liste) ───
+function AnalyseView({ companies, checkins, schoolDays, classSchoolDays, userRole, userKlasse }) {
+  const [klasseFilter, setKlasseFilter] = useState(userRole === 'lehrer' ? userKlasse : '')
   const todayStr = new Date().toISOString().split('T')[0]
-  const activeCompanies = companies.filter(c => !c.archived)
+  const activeCompanies = companies.filter(c => !c.archived && (userRole !== 'lehrer' || c.klasse === userKlasse))
 
   function getCompanyStats(co) {
     const coSchoolDays = (classSchoolDays && co.klasse && classSchoolDays[co.klasse]) || schoolDays
@@ -510,14 +695,16 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
       }
     }
     const pct = totalDays > 0 ? Math.round((attended / totalDays) * 100) : 0
-    const missingDayPattern = Object.entries(dayCount).filter(([, v]) => v.total >= 2 && v.attended / v.total < 0.4).map(([d]) => WEEKDAYS[Number(d)])
-    return { co, totalDays, attended, missed: totalDays - attended, pct, nfc, qrOnly, missingDayPattern, neverNfc: nfc === 0 && qrOnly > 0 }
+    // Per-day percentage map for heatmap
+    const dayPct = {}
+    Object.entries(dayCount).forEach(([d, v]) => { dayPct[d] = v.total > 0 ? Math.round((v.attended / v.total) * 100) : null })
+    const missingDayPattern = Object.entries(dayCount).filter(([, v]) => v.total >= 2 && v.attended / v.total < 0.4).map(([d]) => Number(d))
+    return { co, totalDays, attended, missed: totalDays - attended, pct, nfc, qrOnly, missingDayPattern, dayPct, practiceDayNums, neverNfc: nfc === 0 && qrOnly > 0 }
   }
 
   const allStats = activeCompanies.map(getCompanyStats).filter(s => s.totalDays > 0)
   const filteredStats = klasseFilter ? allStats.filter(s => s.co.klasse === klasseFilter) : allStats
 
-  // Klassen-Aggregat
   const classSummary = CLASSES.map(cls => {
     const cs = allStats.filter(s => s.co.klasse === cls)
     const total = cs.reduce((a, s) => a + s.totalDays, 0)
@@ -528,8 +715,6 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
   const gesamt = allStats.reduce((a, s) => ({ t: a.t + s.totalDays, a: a.a + s.attended, n: a.n + s.nfc, q: a.q + s.qrOnly }), { t: 0, a: 0, n: 0, q: 0 })
   const gesamtPct = gesamt.t > 0 ? Math.round((gesamt.a / gesamt.t) * 100) : 0
 
-  // Auffälligkeiten
-  const highAbsence = filteredStats.filter(s => s.pct < 70).sort((a, b) => a.pct - b.pct)
   const patternIssues = filteredStats.filter(s => s.missingDayPattern.length > 0)
   const neverNfcList = filteredStats.filter(s => s.neverNfc)
 
@@ -552,19 +737,34 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
   }
 
   const rankSorted = [...filteredStats].sort((a, b) => a.pct - b.pct)
-  const cardBg = { background: T.surfaceLight, borderRadius: 10, padding: 16 }
+
+  // Heatmap-Farbe für Anwesenheitsquote
+  const heatColor = (pct) => {
+    if (pct === null) return T.surfaceLight
+    if (pct >= 90) return '#1e7a3d'
+    if (pct >= 75) return '#3aa55a'
+    if (pct >= 60) return '#a8a02a'
+    if (pct >= 40) return '#c97a1f'
+    if (pct >= 20) return '#b04a2a'
+    return '#8b1a1a'
+  }
+  const heatTextColor = (pct) => {
+    if (pct === null) return T.textDim
+    return '#fff'
+  }
 
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
       <h1 style={{ ...S.h1, marginBottom: 20 }}>Analyse</h1>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
-        <button onClick={() => setKlasseFilter('')} style={{ ...S.filterBtn, ...(klasseFilter === '' ? S.filterActive : {}) }}>Alle</button>
-        {CLASSES.map(c => <button key={c} onClick={() => setKlasseFilter(c)} style={{ ...S.filterBtn, ...(klasseFilter === c ? S.filterActive : {}) }}>{c}</button>)}
-      </div>
+      {userRole === 'admin' && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: T.textDim }}>Klasse:</span>
+          <button onClick={() => setKlasseFilter('')} style={{ ...S.filterBtn, ...(klasseFilter === '' ? S.filterActive : {}) }}>Alle</button>
+          {CLASSES.map(c => <button key={c} onClick={() => setKlasseFilter(c)} style={{ ...S.filterBtn, ...(klasseFilter === c ? S.filterActive : {}) }}>{c}</button>)}
+        </div>
+      )}
 
-      {/* Gesamt-KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
         <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
           <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Gesamtquote</div>
@@ -579,14 +779,12 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
           <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'Space Mono', monospace" }}><span style={{ color: T.success }}>{gesamt.n}</span><span style={{ color: T.textDim }}> / </span><span style={{ color: T.warning }}>{gesamt.q}</span></div>
         </div>
         <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Auff&auml;llig</div>
-          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono', monospace", color: highAbsence.length > 0 ? T.danger : T.success }}>{highAbsence.length}</div>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Auff&auml;llige Wochentag-Muster</div>
+          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono', monospace", color: patternIssues.length > 0 ? T.warning : T.success }}>{patternIssues.length}</div>
         </div>
       </div>
 
-      {/* Diagramme */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
-        {/* Klassenvergleich */}
         <div style={{ ...S.card }}>
           <h3 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Anwesenheitsquote nach Klasse</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -601,7 +799,6 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
           </ResponsiveContainer>
         </div>
 
-        {/* Wochen-Trend */}
         <div style={{ ...S.card }}>
           <h3 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Anwesenheitstrend (letzte 6 Wochen)</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -615,7 +812,62 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
         </div>
       </div>
 
-      {/* Ranking */}
+      {/* Wochentag-Heatmap (alle Betriebe der gefilterten Auswahl) */}
+      <div style={{ ...S.card, marginBottom: 20 }}>
+        <h3 style={{ fontSize: 12, color: T.textMuted, marginBottom: 4, textTransform: 'uppercase' }}>Anwesenheits-Heatmap nach Wochentag</h3>
+        <p style={{ fontSize: 11, color: T.textDim, marginBottom: 16 }}>Anwesenheitsquote pro Betrieb und Wochentag. Dunkelrot = problematisch, dunkelgr&uuml;n = sehr gut.</p>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ ...S.table, borderCollapse: 'separate', borderSpacing: 2 }}>
+            <thead>
+              <tr>
+                <th style={{ ...S.th, textAlign: 'left' }}>Betrieb</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Mo</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Di</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Mi</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Do</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Fr</th>
+                <th style={{ ...S.th, textAlign: 'center' }}>Gesamt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredStats.map(s => (
+                <tr key={s.co.id}>
+                  <td style={{ ...S.td, color: T.text, whiteSpace: 'nowrap' }}>
+                    <span style={{ fontFamily: "'Space Mono', monospace", color: T.accent, fontWeight: 700, marginRight: 8 }}>{s.co.code}</span>
+                    {s.co.name}
+                  </td>
+                  {[1,2,3,4,5].map(d => {
+                    const pct = s.dayPct[d]
+                    const isPattern = s.missingDayPattern.includes(d)
+                    return (
+                      <td key={d} style={{ padding: 2, textAlign: 'center' }}>
+                        {pct === null || pct === undefined ? (
+                          <div style={{ background: T.surfaceLight, color: T.textDim, padding: '6px 4px', borderRadius: 4, fontSize: 11 }}>{"\u2013"}</div>
+                        ) : (
+                          <div style={{ background: heatColor(pct), color: heatTextColor(pct), padding: '6px 4px', borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: "'Space Mono', monospace", border: isPattern ? `2px solid ${T.danger}` : '2px solid transparent' }} title={isPattern ? 'Auff\u00e4lliges Muster' : ''}>
+                            {pct}%
+                          </div>
+                        )}
+                      </td>
+                    )
+                  })}
+                  <td style={{ ...S.td, textAlign: 'center', fontWeight: 700, color: s.pct >= 80 ? T.success : s.pct >= 50 ? T.warning : T.danger }}>{s.pct}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center', fontSize: 10, color: T.textDim }}>
+          <span>Skala:</span>
+          {[[0,'<20%'],[20,'20–40%'],[40,'40–60%'],[60,'60–75%'],[75,'75–90%'],[90,'≥90%']].map(([v,l]) => (
+            <span key={v} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 14, height: 14, background: heatColor(v), borderRadius: 3, display: 'inline-block' }} />{l}
+            </span>
+          ))}
+          <span style={{ marginLeft: 12 }}><span style={{ width: 14, height: 14, border: `2px solid ${T.danger}`, borderRadius: 3, display: 'inline-block', verticalAlign: 'middle' }} /> Auff&auml;lliges Muster (&lt;40% an einem Tag)</span>
+        </div>
+      </div>
+
       <div style={{ ...S.card, marginBottom: 20 }}>
         <h3 style={{ fontSize: 12, color: T.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Ranking nach Fehlquote {klasseFilter ? `\u2013 ${klasseFilter}` : '(alle Klassen)'}</h3>
         <div style={{ overflowX: 'auto' }}>
@@ -641,28 +893,42 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
         </div>
       </div>
 
-      {/* Auffälligkeiten */}
-      <div style={{ ...S.card, borderColor: T.danger + '33' }}>
-        <h3 style={{ fontSize: 12, color: T.danger, marginBottom: 16, textTransform: 'uppercase' }}>Auff&auml;lligkeiten</h3>
-
-        {highAbsence.length > 0 && (<div style={{ marginBottom: 16 }}>
-          <h4 style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>{"\u26A0"} Hohe Fehlquote (&lt; 70%)</h4>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {highAbsence.map(s => (
-              <span key={s.co.id} style={{ ...S.badge, background: T.dangerDim, color: T.danger, fontSize: 11 }}>
-                {s.co.code} {s.co.name} {"\u2013"} {s.pct}% ({s.missed} Tage gefehlt)
-              </span>
-            ))}
-          </div>
-        </div>)}
+      {/* Auffälligkeiten - "Hohe Fehlquote" entfernt; Wochentag-Muster jetzt grafisch */}
+      <div style={{ ...S.card, borderColor: T.warning + '33' }}>
+        <h3 style={{ fontSize: 12, color: T.warning, marginBottom: 16, textTransform: 'uppercase' }}>Auff&auml;lligkeiten</h3>
 
         {patternIssues.length > 0 && (<div style={{ marginBottom: 16 }}>
-          <h4 style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>{"\uD83D\uDCC5"} Systematische Wochentag-Muster</h4>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <h4 style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>{"\uD83D\uDCC5"} Systematische Wochentag-Muster (Anwesenheit &lt; 40% an einem Tag)</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {patternIssues.map(s => (
-              <span key={s.co.id} style={{ ...S.badge, background: T.warningDim, color: T.warning, fontSize: 11 }}>
-                {s.co.code} {s.co.name} {"\u2013"} fehlt h&auml;ufig: {s.missingDayPattern.join(', ')}
-              </span>
+              <div key={s.co.id} style={{ background: T.surfaceLight, padding: 10, borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <span style={{ fontFamily: "'Space Mono', monospace", color: T.accent, fontWeight: 700 }}>{s.co.code}</span>
+                    <span style={{ color: T.text, marginLeft: 8 }}>{s.co.name}</span>
+                    {s.co.klasse && <span style={{ color: T.textDim, fontSize: 11, marginLeft: 8 }}>({s.co.klasse})</span>}
+                  </div>
+                  <span style={{ fontSize: 11, color: T.textDim }}>fehlt h&auml;ufig: {s.missingDayPattern.map(d => WEEKDAYS[d]).join(', ')}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[1,2,3,4,5].map(d => {
+                    const pct = s.dayPct[d]
+                    const isPattern = s.missingDayPattern.includes(d)
+                    return (
+                      <div key={d} style={{ flex: 1, textAlign: 'center' }}>
+                        <div style={{ fontSize: 10, color: T.textDim, marginBottom: 2 }}>{WEEKDAYS[d]}</div>
+                        {pct === null || pct === undefined ? (
+                          <div style={{ background: T.surface, color: T.textDim, padding: '6px 4px', borderRadius: 4, fontSize: 11 }}>{"\u2013"}</div>
+                        ) : (
+                          <div style={{ background: heatColor(pct), color: '#fff', padding: '6px 4px', borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: "'Space Mono', monospace", border: isPattern ? `2px solid ${T.danger}` : '2px solid transparent' }}>
+                            {pct}%
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             ))}
           </div>
         </div>)}
@@ -678,7 +944,7 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
           </div>
         </div>)}
 
-        {highAbsence.length === 0 && patternIssues.length === 0 && neverNfcList.length === 0 && (
+        {patternIssues.length === 0 && neverNfcList.length === 0 && (
           <p style={{ color: T.textDim, fontSize: 13 }}>{"\u2713"} Keine Auff&auml;lligkeiten erkannt.</p>
         )}
       </div>
@@ -686,13 +952,87 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays }) {
   )
 }
 
-function ExportView({ companies, checkins, schoolDays }) {
-  const [weeksBack, setWeeksBack] = useState(1); const now = new Date(); const todayStr = now.toISOString().split('T')[0]; const allDates = []; for (let i = weeksBack - 1; i >= 0; i--) { const m = getMonday(new Date(now.getTime() - i * 7 * 86400000)); getWeekDatesFromMonday(m).forEach(d => { const day = new Date(d).getDay(); if (day !== 0) allDates.push(d) }) }
-  const downloadCSV = () => { const header = ['K\u00fcrzel', 'Betrieb', 'Klasse', ...allDates.map(d => `${WEEKDAYS[new Date(d).getDay()]} ${d}`)]; const rows = companies.map(co => { const cols = allDates.map(d => { const day = new Date(d).getDay(); const isSchool = schoolDays.includes(day); const ci = checkins.find(c => c.companyId === co.id && c.date === d); if (ci) return ci.nfcVerified ? `${ci.time} NFC` : `${ci.time} QR`; if (isSchool) return 'Schultag'; if (day === 6) return '-'; if (d <= todayStr) return 'FEHLT'; return '-' }); return [co.code, co.name, co.klasse || '', ...cols] }); const csv = [header, ...rows].map(r => r.map(c => `"${c}"`).join(';')).join('\n'); const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `PraxisCheck_Export.csv`; a.click(); URL.revokeObjectURL(url) }
-  return (<div style={{ animation: 'fadeIn .3s ease' }}><div style={S.header}><h1 style={S.h1}>CSV-Export</h1><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><span style={{ fontSize: 13, color: T.textMuted }}>Zeitraum:</span><select style={{ ...S.input, width: 'auto' }} value={weeksBack} onChange={e => setWeeksBack(Number(e.target.value))}><option value={1}>Aktuelle Woche</option><option value={2}>2 Wochen</option><option value={4}>4 Wochen</option><option value={8}>8 Wochen</option><option value={52}>Ganzes Jahr</option></select></div></div><div style={S.card}><p style={{ color: T.textMuted, fontSize: 14, marginBottom: 16 }}>Die CSV enth&auml;lt: K&uuml;rzel, Betriebsname, Klasse und f&uuml;r jeden Tag den Check-in-Status.</p><button style={S.btnPrimary} onClick={downloadCSV}>{"\u2193"} CSV herunterladen</button></div></div>)
+// ─── EXPORT VIEW (XLSX statt CSV) ───
+function ExportView({ companies, checkins, classSchoolDays, classFilter, userRole, userKlasse }) {
+  const [weeksBack, setWeeksBack] = useState(2)
+  const [showSchoolDays, setShowSchoolDays] = useState(false)
+  const [showHolidays, setShowHolidays] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  const effectiveClass = userRole === 'lehrer' ? userKlasse : classFilter
+
+  const downloadXLSX = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/export-xlsx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weeksBack, klasse: effectiveClass || null, showSchoolDays, showHolidays }),
+      })
+      if (!res.ok) throw new Error('Export fehlgeschlagen')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `PraxisCheck_Export${effectiveClass ? '_' + effectiveClass : ''}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      alert('Fehler: ' + e.message)
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ animation: 'fadeIn .3s ease' }}>
+      <div style={S.header}>
+        <h1 style={S.h1}>Excel-Export {effectiveClass ? `\u2013 ${effectiveClass}` : ''}</h1>
+      </div>
+      <div style={S.card}>
+        <p style={{ color: T.textMuted, fontSize: 14, marginBottom: 16 }}>
+          Excel-Datei (.xlsx) mit farbigen Zellen: <strong style={{ color: T.success }}>1 = anwesend (gr&uuml;n)</strong>, <strong style={{ color: T.danger }}>0 = abwesend (rot)</strong>, S = Schultag, F = Ferien, &ndash; = au&szlig;erhalb Praktikumszeitraum.
+          <br />Es werden nur Daten ab Praktikumsstart ber&uuml;cksichtigt.
+        </p>
+
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+          <div>
+            <label style={S.label}>Zeitraum</label>
+            <select style={{ ...S.input, width: 'auto' }} value={weeksBack} onChange={e => setWeeksBack(Number(e.target.value))}>
+              <option value={1}>Aktuelle Woche</option>
+              <option value={2}>2 Wochen</option>
+              <option value={4}>4 Wochen</option>
+              <option value={8}>8 Wochen</option>
+              <option value={52}>Gesamtes Praktikum</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: T.textMuted, cursor: 'pointer' }}>
+              <input type="checkbox" checked={showSchoolDays} onChange={e => setShowSchoolDays(e.target.checked)} />
+              Schultage anzeigen
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: T.textMuted, cursor: 'pointer' }}>
+              <input type="checkbox" checked={showHolidays} onChange={e => setShowHolidays(e.target.checked)} />
+              Ferientage anzeigen
+            </label>
+          </div>
+        </div>
+
+        <button style={{ ...S.btnPrimary, opacity: loading ? 0.5 : 1 }} onClick={downloadXLSX} disabled={loading}>
+          {loading ? 'Wird erstellt...' : '\u2193 Excel-Datei herunterladen'}
+        </button>
+      </div>
+    </div>
+  )
 }
 
-function Settings({ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDays, resetData, companies }) {
+// ─── SETTINGS (mit Klassenlehrer-Modus) ───
+function Settings({ classSchoolDays, setClassSchoolDays, resetData, companies, userRole, userKlasse }) {
+  const isLehrer = userRole === 'lehrer'
+  const ownClass = isLehrer ? userKlasse : null
+
+  // Welche Klassen darf der Nutzer sehen/bearbeiten?
+  const editableClasses = isLehrer ? [ownClass] : CLASSES
+
   const toggleClassDay = async (klasse, day) => {
     const current = classSchoolDays[klasse] || []
     const updated = current.includes(day) ? current.filter(d => d !== day) : [...current, day].sort()
@@ -703,22 +1043,28 @@ function Settings({ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDa
   const [weeksOld, setWeeksOld] = useState(4)
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
-  const [klasseSel, setKlasseSel] = useState('BPA')
+  const [klasseSel, setKlasseSel] = useState(isLehrer ? ownClass : 'BPA')
   const [companySel, setCompanySel] = useState('')
   const [companyFull, setCompanyFull] = useState('')
-  const sortedCompanies = companies.slice().sort((a,b) => a.name.localeCompare(b.name, 'de'))
-  const archivedCount = companies.filter(c => c.archived).length
+
+  // Companies für Lehrer auf eigene Klasse beschränken
+  const allowedCompanies = isLehrer ? companies.filter(c => c.klasse === ownClass) : companies
+  const sortedCompanies = allowedCompanies.slice().sort((a,b) => a.name.localeCompare(b.name, 'de'))
+  const archivedCount = allowedCompanies.filter(c => c.archived).length
+
   const btnRow = { ...S.btnSmall, color: T.warning, borderColor: T.warning + '44' }
   const btnDanger = { ...S.btnSmall, color: T.danger, borderColor: T.danger + '44' }
   const miniInput = { ...S.input, width: 'auto', padding: '6px 8px', fontSize: 12 }
   const sectionCard = { ...S.card, borderColor: T.warning + '33' }
+
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
-      <h1 style={{ ...S.h1, marginBottom: 24 }}>Einstellungen</h1>
+      <h1 style={{ ...S.h1, marginBottom: 24 }}>Einstellungen{isLehrer ? ` \u2013 ${ownClass}` : ''}</h1>
+
       <div style={S.card}>
-        <h2 style={S.h2}>Schultage pro Klasse</h2>
+        <h2 style={S.h2}>Schultage{isLehrer ? '' : ' pro Klasse'}</h2>
         <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>An Schultagen wird kein Check-in erwartet. Praktikumstage sind alle anderen Werktage.</p>
-        {CLASSES.map(cls => (
+        {editableClasses.map(cls => (
           <div key={cls} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${T.border}22` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, color: T.accent, width: 40 }}>{cls}</span>
@@ -733,8 +1079,8 @@ function Settings({ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDa
       </div>
 
       <div style={sectionCard}>
-        <h2 style={{ ...S.h2, color: T.warning }}>Check-ins l&ouml;schen</h2>
-        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>Betriebe bleiben erhalten, nur die Check-in-Daten werden entfernt.</p>
+        <h2 style={{ ...S.h2, color: T.warning }}>Check-ins l&ouml;schen{isLehrer ? ` (nur ${ownClass})` : ''}</h2>
+        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>Betriebe bleiben erhalten, nur die Check-in-Daten werden entfernt. Jede L&ouml;schung erfordert eine Passwortbest&auml;tigung.</p>
 
         <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
           <label style={S.label}>&Auml;lter als ... Wochen</label>
@@ -742,7 +1088,7 @@ function Settings({ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDa
             <select style={miniInput} value={weeksOld} onChange={e => setWeeksOld(Number(e.target.value))}>
               {[1,2,4,8,12,26,52].map(w => <option key={w} value={w}>{w} Wochen</option>)}
             </select>
-            <button style={btnRow} onClick={() => resetData({ type: 'checkins_older_than', weeksOld })}>L&ouml;schen</button>
+            <button style={btnRow} onClick={() => resetData(isLehrer ? { type: 'checkins_klasse_older_than', klasse: ownClass, weeksOld } : { type: 'checkins_older_than', weeksOld })}>L&ouml;schen</button>
           </div>
         </div>
 
@@ -752,22 +1098,24 @@ function Settings({ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDa
             <input type="date" style={miniInput} value={rangeStart} onChange={e => setRangeStart(e.target.value)} />
             <span style={{ color: T.textDim, fontSize: 12 }}>bis</span>
             <input type="date" style={miniInput} value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
-            <button style={btnRow} onClick={() => { if (!rangeStart || !rangeEnd) { alert('Bitte beide Daten w\u00e4hlen'); return }; resetData({ type: 'checkins_range', startDate: rangeStart, endDate: rangeEnd }) }}>L&ouml;schen</button>
+            <button style={btnRow} onClick={() => { if (!rangeStart || !rangeEnd) { alert('Bitte beide Daten w\u00e4hlen'); return }; resetData(isLehrer ? { type: 'checkins_klasse_range', klasse: ownClass, startDate: rangeStart, endDate: rangeEnd } : { type: 'checkins_range', startDate: rangeStart, endDate: rangeEnd }) }}>L&ouml;schen</button>
           </div>
         </div>
 
-        <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
-          <label style={S.label}>Einer Klasse</label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select style={miniInput} value={klasseSel} onChange={e => setKlasseSel(e.target.value)}>
-              {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button style={btnRow} onClick={() => resetData({ type: 'checkins_klasse', klasse: klasseSel })}>L&ouml;schen</button>
+        {!isLehrer && (
+          <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+            <label style={S.label}>Einer Klasse</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <select style={miniInput} value={klasseSel} onChange={e => setKlasseSel(e.target.value)}>
+                {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button style={btnRow} onClick={() => resetData({ type: 'checkins_klasse', klasse: klasseSel })}>L&ouml;schen</button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
-          <label style={S.label}>Eines Betriebs</label>
+          <label style={S.label}>Eines Betriebs{isLehrer ? ` (deine Klasse)` : ''}</label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <select style={miniInput} value={companySel} onChange={e => setCompanySel(e.target.value)}>
               <option value="">{"\u2013 Betrieb w\u00e4hlen \u2013"}</option>
@@ -777,15 +1125,22 @@ function Settings({ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDa
           </div>
         </div>
 
-        <div>
-          <label style={S.label}>Alle Check-ins</label>
-          <button style={btnRow} onClick={() => resetData({ type: 'checkins' })}>Alle Check-ins l&ouml;schen</button>
-        </div>
+        {!isLehrer ? (
+          <div>
+            <label style={S.label}>Alle Check-ins</label>
+            <button style={btnRow} onClick={() => resetData({ type: 'checkins' })}>Alle Check-ins l&ouml;schen</button>
+          </div>
+        ) : (
+          <div>
+            <label style={S.label}>Alle Check-ins der Klasse {ownClass}</label>
+            <button style={btnRow} onClick={() => resetData({ type: 'checkins_klasse', klasse: ownClass })}>Alle Check-ins der Klasse l&ouml;schen</button>
+          </div>
+        )}
       </div>
 
       <div style={{ ...S.card, borderColor: T.danger + '33' }}>
-        <h2 style={{ ...S.h2, color: T.danger }}>Betriebe l&ouml;schen</h2>
-        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>Betriebe werden inkl. aller zugeh&ouml;rigen Check-ins entfernt.</p>
+        <h2 style={{ ...S.h2, color: T.danger }}>Betriebe l&ouml;schen{isLehrer ? ` (nur ${ownClass})` : ''}</h2>
+        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>Betriebe werden inkl. aller zugeh&ouml;rigen Check-ins entfernt. Jede L&ouml;schung erfordert eine Passwortbest&auml;tigung.</p>
 
         <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
           <label style={S.label}>Einzelnen Betrieb komplett l&ouml;schen</label>
@@ -799,14 +1154,16 @@ function Settings({ schoolDays, setSchoolDays, classSchoolDays, setClassSchoolDa
         </div>
 
         <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
-          <label style={S.label}>Alle archivierten Betriebe ({archivedCount})</label>
-          <button style={btnDanger} onClick={() => resetData({ type: 'archived_companies' })} disabled={archivedCount === 0}>Archivierte endg&uuml;ltig l&ouml;schen</button>
+          <label style={S.label}>Alle archivierten Betriebe{isLehrer ? ` der Klasse ${ownClass}` : ''} ({archivedCount})</label>
+          <button style={btnDanger} onClick={() => resetData(isLehrer ? { type: 'archived_companies_klasse', klasse: ownClass } : { type: 'archived_companies' })} disabled={archivedCount === 0}>Archivierte endg&uuml;ltig l&ouml;schen</button>
         </div>
 
-        <div>
-          <label style={S.label}>Alles zur&uuml;cksetzen</label>
-          <button style={btnDanger} onClick={() => resetData({ type: 'all' })}>ALLE Daten l&ouml;schen (Betriebe + Check-ins)</button>
-        </div>
+        {!isLehrer && (
+          <div>
+            <label style={S.label}>Alles zur&uuml;cksetzen</label>
+            <button style={btnDanger} onClick={() => resetData({ type: 'all' })}>ALLE Daten l&ouml;schen (Betriebe + Check-ins)</button>
+          </div>
+        )}
       </div>
     </div>
   )

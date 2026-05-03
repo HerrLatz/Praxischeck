@@ -27,8 +27,25 @@ export async function POST(req) {
       return NextResponse.json({ status: 'ok', deleted: checkins.length - kept.length })
     }
 
+    if (type === 'checkins_klasse_older_than') {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - (weeksOld * 7))
+      const cutoffStr = cutoff.toISOString().split('T')[0]
+      const klasseCompanyIds = new Set(companies.filter(c => c.klasse === klasse).map(c => c.id))
+      const kept = checkins.filter(c => !(klasseCompanyIds.has(c.companyId) && c.date < cutoffStr))
+      await redis.set('checkins', kept)
+      return NextResponse.json({ status: 'ok', deleted: checkins.length - kept.length })
+    }
+
     if (type === 'checkins_range') {
       const kept = checkins.filter(c => c.date < startDate || c.date > endDate)
+      await redis.set('checkins', kept)
+      return NextResponse.json({ status: 'ok', deleted: checkins.length - kept.length })
+    }
+
+    if (type === 'checkins_klasse_range') {
+      const klasseCompanyIds = new Set(companies.filter(c => c.klasse === klasse).map(c => c.id))
+      const kept = checkins.filter(c => !(klasseCompanyIds.has(c.companyId) && c.date >= startDate && c.date <= endDate))
       await redis.set('checkins', kept)
       return NextResponse.json({ status: 'ok', deleted: checkins.length - kept.length })
     }
@@ -57,6 +74,15 @@ export async function POST(req) {
     if (type === 'archived_companies') {
       const archivedIds = new Set(companies.filter(c => c.archived).map(c => c.id))
       const keptCompanies = companies.filter(c => !c.archived)
+      const keptCheckins = checkins.filter(c => !archivedIds.has(c.companyId))
+      await redis.set('companies', keptCompanies)
+      await redis.set('checkins', keptCheckins)
+      return NextResponse.json({ status: 'ok', deletedCompanies: archivedIds.size, deletedCheckins: checkins.length - keptCheckins.length })
+    }
+
+    if (type === 'archived_companies_klasse') {
+      const archivedIds = new Set(companies.filter(c => c.archived && c.klasse === klasse).map(c => c.id))
+      const keptCompanies = companies.filter(c => !(c.archived && c.klasse === klasse))
       const keptCheckins = checkins.filter(c => !archivedIds.has(c.companyId))
       await redis.set('companies', keptCompanies)
       await redis.set('checkins', keptCheckins)
