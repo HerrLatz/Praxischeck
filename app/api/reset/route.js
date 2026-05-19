@@ -1,11 +1,38 @@
 import redis from '../../../lib/redis'
 import { NextResponse } from 'next/server'
 
+const BACKUP_KEYS = ['companies', 'checkins', 'checkins_trash', 'class_school_days', 'custom_holidays']
+
+// Erstellt vor gravierenden Löschungen automatisch einen internen Snapshot.
+async function autoSnapshot(label) {
+  try {
+    const data = {}
+    for (const key of BACKUP_KEYS) {
+      data[key] = await redis.get(key)
+    }
+    const snapshot = { version: 1, createdAt: new Date().toISOString(), label, data }
+    let snapshots = await redis.get('backup_snapshots') || []
+    if (!Array.isArray(snapshots)) snapshots = []
+    snapshots.unshift(snapshot)
+    snapshots = snapshots.slice(0, 10)
+    await redis.set('backup_snapshots', snapshots)
+  } catch (e) {
+    // Snapshot-Fehler darf die eigentliche Aktion nicht blockieren
+    console.error('autoSnapshot failed:', e.message)
+  }
+}
+
 export async function POST(req) {
   try {
     const { type, klasse, companyId, weeksOld, startDate, endDate } = await req.json()
     const checkins = await redis.get('checkins') || []
     const companies = await redis.get('companies') || []
+
+    // Vor gravierenden Aktionen automatisch sichern
+    const destructiveTypes = ['all', 'checkins', 'checkins_klasse', 'company_full', 'archived_companies', 'archived_companies_klasse']
+    if (destructiveTypes.includes(type)) {
+      await autoSnapshot(`auto-vor-${type}`)
+    }
 
     if (type === 'checkins') {
       await redis.set('checkins', [])

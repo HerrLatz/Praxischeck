@@ -195,7 +195,20 @@ export default function AdminPage() {
 
   const refresh = useCallback(async () => { const [co, ci] = await Promise.all([fetch('/api/companies').then(r => r.json()), fetch('/api/checkins').then(r => r.json())]); setCompanies(co); setCheckins(ci); setLoading(false) }, [])
   useEffect(() => { if (authed) refresh() }, [authed, refresh])
-  useEffect(() => { if (authed) { const i = setInterval(refresh, 30000); return () => clearInterval(i) } }, [authed, refresh])
+  useEffect(() => {
+    if (!authed) return
+    let intervalId = null
+    const start = () => { if (!intervalId) intervalId = setInterval(refresh, 60000) }
+    const stop = () => { if (intervalId) { clearInterval(intervalId); intervalId = null } }
+    // Nur aktualisieren, wenn der Tab sichtbar ist
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') { refresh(); start() }
+      else stop()
+    }
+    if (document.visibilityState === 'visible') start()
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => { stop(); document.removeEventListener('visibilitychange', handleVisibility) }
+  }, [authed, refresh])
   const showToast = useCallback((msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000) }, [])
 
   const apiCompanies = async (action, company, id) => { await fetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, company, id }) }); refresh() }
@@ -254,7 +267,7 @@ export default function AdminPage() {
         {view === 'companies' && <Companies {...{ companies: (userRole === 'lehrer' ? companies.filter(c => c.klasse === userKlasse) : companies).slice().sort((a, b) => a.name.localeCompare(b.name, 'de')), allCompanies: companies, apiCompanies, showToast, userRole, userKlasse }} />}
         {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, classSchoolDays, classFilter, userRole, userKlasse }} />}
         {view === 'analyse' && <AnalyseView {...{ companies, checkins, schoolDays, classSchoolDays, userRole, userKlasse, customHolidays }} />}
-        {view === 'settings' && <Settings {...{ classSchoolDays, setClassSchoolDays, resetData, companies, userRole, userKlasse }} />}
+        {view === 'settings' && <Settings {...{ classSchoolDays, setClassSchoolDays, resetData, companies, userRole, userKlasse, showToast }} />}
         {archivedCompanies.length > 0 && (view === 'dashboard' || view === 'export') && (<div style={{ marginTop: 8 }}><button style={{ ...S.btnSmall, color: showArchived ? T.accent : T.textDim }} onClick={() => setShowArchived(!showArchived)}>{showArchived ? `Archiv ausblenden (${archivedCompanies.length})` : `Archiv anzeigen (${archivedCompanies.length})`}</button></div>)}
       </main>
     </div>
@@ -1119,7 +1132,7 @@ function ExportView({ companies, checkins, classSchoolDays, classFilter, userRol
 }
 
 // ─── SETTINGS (mit Klassenlehrer-Modus) ───
-function Settings({ classSchoolDays, setClassSchoolDays, resetData, companies, userRole, userKlasse }) {
+function Settings({ classSchoolDays, setClassSchoolDays, resetData, companies, userRole, userKlasse, showToast }) {
   const isLehrer = userRole === 'lehrer'
   const ownClass = isLehrer ? userKlasse : null
 
@@ -1255,6 +1268,166 @@ function Settings({ classSchoolDays, setClassSchoolDays, resetData, companies, u
           <div>
             <label style={S.label}>Alles zur&uuml;cksetzen</label>
             <button style={btnDanger} onClick={() => resetData({ type: 'all' })}>ALLE Daten l&ouml;schen (Betriebe + Check-ins)</button>
+          </div>
+        )}
+      </div>
+
+      {!isLehrer && <BackupSection showToast={showToast} />}
+    </div>
+  )
+}
+
+// ─── BACKUP & WIEDERHERSTELLUNG ───
+function BackupSection({ showToast }) {
+  const [snapshots, setSnapshots] = useState([])
+  const [busy, setBusy] = useState(false)
+  const fileInputRef = React.useRef(null)
+
+  const fmtDateTime = (iso) => {
+    try {
+      const d = new Date(iso)
+      return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    } catch { return iso }
+  }
+
+  const loadSnapshots = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list_snapshots' }) })
+      const data = await res.json()
+      setSnapshots(Array.isArray(data) ? data : [])
+    } catch { setSnapshots([]) }
+  }, [])
+
+  useEffect(() => { loadSnapshots() }, [loadSnapshots])
+
+  // Backup als JSON-Datei herunterladen
+  const downloadBackup = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/backup')
+      if (!res.ok) throw new Error('Backup fehlgeschlagen')
+      const backup = await res.json()
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const stamp = new Date().toISOString().split('T')[0]
+      a.href = url
+      a.download = `PraxisCheck_Backup_${stamp}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast && showToast('Backup heruntergeladen')
+    } catch (e) {
+      alert('Fehler: ' + e.message)
+    }
+    setBusy(false)
+  }
+
+  // Backup aus hochgeladener Datei wiederherstellen
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!confirm('Achtung: Der aktuelle Datenbestand wird durch das Backup ersetzt. Vom jetzigen Stand wird automatisch ein Sicherheits-Snapshot erstellt. Fortfahren?')) {
+      e.target.value = ''
+      return
+    }
+    const pw = prompt('Zur Bestätigung bitte Admin-Passwort eingeben:')
+    if (!pw) { e.target.value = ''; return }
+    const authRes = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: pw }) })
+    const authData = await authRes.json()
+    if (!authData.ok) { alert('Falsches Passwort!'); e.target.value = ''; return }
+
+    setBusy(true)
+    try {
+      const text = await file.text()
+      const backup = JSON.parse(text)
+      const res = await fetch('/api/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'restore', backup }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Wiederherstellung fehlgeschlagen')
+      showToast && showToast('Backup wiederhergestellt')
+      loadSnapshots()
+      setTimeout(() => window.location.reload(), 1200)
+    } catch (err) {
+      alert('Fehler beim Wiederherstellen: ' + err.message)
+    }
+    e.target.value = ''
+    setBusy(false)
+  }
+
+  // Manuellen Snapshot erstellen
+  const createSnapshot = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'snapshot', label: 'manuell' }) })
+      if (!res.ok) throw new Error('Snapshot fehlgeschlagen')
+      showToast && showToast('Snapshot gespeichert')
+      loadSnapshots()
+    } catch (e) {
+      alert('Fehler: ' + e.message)
+    }
+    setBusy(false)
+  }
+
+  // Internen Snapshot wiederherstellen
+  const restoreSnapshot = async (index) => {
+    if (!confirm('Diesen Snapshot wiederherstellen? Der aktuelle Stand wird ersetzt (es wird vorher automatisch gesichert).')) return
+    const pw = prompt('Zur Bestätigung bitte Admin-Passwort eingeben:')
+    if (!pw) return
+    const authRes = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: pw }) })
+    const authData = await authRes.json()
+    if (!authData.ok) { alert('Falsches Passwort!'); return }
+
+    setBusy(true)
+    try {
+      const res = await fetch('/api/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'restore_snapshot', index }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Wiederherstellung fehlgeschlagen')
+      showToast && showToast('Snapshot wiederhergestellt')
+      setTimeout(() => window.location.reload(), 1200)
+    } catch (e) {
+      alert('Fehler: ' + e.message)
+    }
+    setBusy(false)
+  }
+
+  const miniBtn = { ...S.btnSmall, color: T.accent, borderColor: T.accent + '66' }
+
+  return (
+    <div style={{ ...S.card, borderColor: T.accent + '33' }}>
+      <h2 style={{ ...S.h2, color: T.accent }}>Datensicherung</h2>
+      <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>Sichere regelm&auml;&szlig;ig den kompletten Datenbestand. Vor jeder gravierenden L&ouml;schung wird automatisch ein Snapshot erstellt.</p>
+
+      <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+        <label style={S.label}>Backup herunterladen</label>
+        <p style={{ fontSize: 11, color: T.textDim, marginBottom: 8 }}>L&auml;dt alle Daten als JSON-Datei auf deinen Computer. Vor gravierenden &Auml;nderungen empfohlen.</p>
+        <button style={{ ...S.btnPrimary, opacity: busy ? 0.5 : 1 }} onClick={downloadBackup} disabled={busy}>{"\u2193"} Backup-Datei herunterladen</button>
+      </div>
+
+      <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: `1px solid ${T.border}` }}>
+        <label style={S.label}>Backup wiederherstellen</label>
+        <p style={{ fontSize: 11, color: T.textDim, marginBottom: 8 }}>Spielt eine zuvor heruntergeladene Backup-Datei wieder ein. Der aktuelle Stand wird ersetzt.</p>
+        <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleFileUpload} style={{ display: 'none' }} />
+        <button style={{ ...S.btnSmall, color: T.warning, borderColor: T.warning + '66', opacity: busy ? 0.5 : 1 }} onClick={() => fileInputRef.current?.click()} disabled={busy}>{"\u21A5"} Backup-Datei ausw&auml;hlen</button>
+      </div>
+
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+          <label style={{ ...S.label, marginBottom: 0 }}>Interne Snapshots (letzte 10)</label>
+          <button style={{ ...miniBtn, opacity: busy ? 0.5 : 1 }} onClick={createSnapshot} disabled={busy}>+ Snapshot jetzt erstellen</button>
+        </div>
+        <p style={{ fontSize: 11, color: T.textDim, marginBottom: 10 }}>Snapshots werden in der Datenbank gespeichert (z.B. automatisch vor jeder gro&szlig;en L&ouml;schung) und k&ouml;nnen direkt wiederhergestellt werden.</p>
+        {snapshots.length === 0 ? (
+          <p style={{ fontSize: 12, color: T.textDim }}>Noch keine Snapshots vorhanden.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {snapshots.map(s => (
+              <div key={s.index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: T.surfaceLight, borderRadius: 8, padding: '8px 12px', gap: 8, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 12, color: T.text, fontFamily: "'Space Mono', monospace" }}>{fmtDateTime(s.createdAt)}</div>
+                  <div style={{ fontSize: 10, color: T.textDim }}>{s.label} {"\u00B7"} {s.companies} Betriebe {"\u00B7"} {s.checkins} Check-ins</div>
+                </div>
+                <button style={{ ...S.btnSmall, color: T.success, borderColor: T.success + '66', opacity: busy ? 0.5 : 1 }} onClick={() => restoreSnapshot(s.index)} disabled={busy}>{"\u21A9"} Wiederherstellen</button>
+              </div>
+            ))}
           </div>
         )}
       </div>
