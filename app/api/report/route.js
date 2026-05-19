@@ -24,6 +24,13 @@ function isInHoliday(dateStr) {
   return NRW_FERIEN.some(([start, end]) => dateStr >= start && dateStr <= end)
 }
 
+function isCustomFree(dateStr, klasse, customHolidays) {
+  if (!customHolidays) return false
+  if ((customHolidays.ALL || []).includes(dateStr)) return true
+  if (klasse && (customHolidays[klasse] || []).includes(dateStr)) return true
+  return false
+}
+
 const cellBorder = { style: BorderStyle.SINGLE, size: 1, color: '999999' }
 const borders = { top: cellBorder, bottom: cellBorder, left: cellBorder, right: cellBorder }
 
@@ -62,6 +69,7 @@ export async function POST(req) {
     const activeSchoolDays = Array.isArray(schoolDays) ? schoolDays : [3, 4]
     const companies = await redis.get('companies') || []
     const checkins = await redis.get('checkins') || []
+    const customHolidays = await redis.get('custom_holidays') || {}
     const company = companies.find(c => c.id === companyId)
 
     if (!company) {
@@ -77,7 +85,7 @@ export async function POST(req) {
       const dateStr = current.getFullYear() + '-' + String(current.getMonth() + 1).padStart(2, '0') + '-' + String(current.getDate()).padStart(2, '0')
       const dayNum = current.getDay()
       const isPracticeDay = dayNum !== 0 && dayNum !== 6 && !activeSchoolDays.includes(dayNum)
-      const isHoliday = isInHoliday(dateStr)
+      const isHoliday = isInHoliday(dateStr) || isCustomFree(dateStr, company.klasse, customHolidays)
       if (isPracticeDay && !isHoliday && dateStr <= today) {
         const hasCheckin = checkins.some(c => c.companyId === companyId && c.date === dateStr)
         if (!hasCheckin) {

@@ -25,6 +25,13 @@ function isInHoliday(d) {
   return NRW_FERIEN.some(([s, e]) => d >= s && d <= e)
 }
 
+function isCustomFree(dateStr, klasse, customHolidays) {
+  if (!customHolidays) return false
+  if ((customHolidays.ALL || []).includes(dateStr)) return true
+  if (klasse && (customHolidays[klasse] || []).includes(dateStr)) return true
+  return false
+}
+
 function getMonday(d) {
   const date = new Date(d)
   date.setHours(12, 0, 0, 0)
@@ -44,6 +51,7 @@ export async function POST(req) {
     const companies = (await redis.get('companies') || []).filter(c => !c.archived)
     const checkins = await redis.get('checkins') || []
     const classSchoolDays = await redis.get('class_school_days') || {}
+    const customHolidays = await redis.get('custom_holidays') || {}
 
     const filteredCompanies = (klasse ? companies.filter(c => c.klasse === klasse) : companies)
       .slice().sort((a, b) => a.name.localeCompare(b.name, 'de'))
@@ -111,7 +119,7 @@ export async function POST(req) {
         const cell = row.getCell(4 + i)
         const day = new Date(d + 'T12:00:00').getDay()
         const isSchoolDay = coSchoolDays.includes(day)
-        const isHoliday = isInHoliday(d)
+        const isHoliday = isInHoliday(d) || isCustomFree(d, co.klasse, customHolidays)
         const outsideRange = d < coStart || d > coEnd
         const ci = checkins.find(c => c.companyId === co.id && c.date === d)
 
@@ -161,7 +169,7 @@ export async function POST(req) {
     }
     if (!showHolidays) {
       allDates.forEach((d, i) => {
-        if (isInHoliday(d)) ws.getColumn(4 + i).hidden = true
+        if (isInHoliday(d) || isCustomFree(d, klasse, customHolidays)) ws.getColumn(4 + i).hidden = true
       })
     }
 

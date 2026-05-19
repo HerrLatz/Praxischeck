@@ -100,6 +100,17 @@ function getHolidayName(dateStr) {
   return 'Ferien'
 }
 
+// Manuell markierte Feiertage / freie Tage.
+// customHolidays-Objekt: { ALL: [...], BPA: [...], ... }
+// scope = aktuelle Klasse oder '' (Admin "Alle"). Ein Tag ist frei, wenn er
+// in 'ALL' steht ODER (bei aktivem Klassen-Scope) in der jeweiligen Klasse.
+function isCustomHoliday(dateStr, scope, customHolidays) {
+  if (!customHolidays) return false
+  if ((customHolidays.ALL || []).includes(dateStr)) return true
+  if (scope && (customHolidays[scope] || []).includes(dateStr)) return true
+  return false
+}
+
 function formatDate(d) {
   return `${d.split('-')[2]}.${d.split('-')[1]}.`
 }
@@ -168,10 +179,17 @@ export default function AdminPage() {
   const [classSchoolDays, setClassSchoolDays] = useState({ BPA: [1,2], BPB: [2,3], BPC: [3,4], BPD: [4,5], BPE: [1,5] })
   const [classFilter, setClassFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  const [customHolidays, setCustomHolidays] = useState({})
+
+  const loadCustomHolidays = useCallback(() => {
+    fetch('/api/custom-holidays').then(r => r.json()).then(d => { if (d && typeof d === 'object' && !d.error) setCustomHolidays(d) }).catch(() => {})
+  }, [])
 
   useEffect(() => { const saved = localStorage.getItem('pk-auth-data'); if (saved) { try { const data = JSON.parse(saved); setAuthed(true); setUserRole(data.role); setUserKlasse(data.klasse); setUserName(data.username); if (data.klasse) setClassFilter(data.klasse) } catch { localStorage.removeItem('pk-auth-data') } } }, [])
 
   useEffect(() => { fetch('/api/class-settings').then(r => r.json()).then(d => { if (d && typeof d === 'object' && !d.error) setClassSchoolDays(d) }).catch(() => {}) }, [])
+
+  useEffect(() => { loadCustomHolidays() }, [loadCustomHolidays])
 
   const handleLogin = (data) => { localStorage.setItem('pk-auth', data.token); localStorage.setItem('pk-auth-data', JSON.stringify({ role: data.role, klasse: data.klasse, username: data.username })); setAuthed(true); setUserRole(data.role); setUserKlasse(data.klasse); setUserName(data.username); if (data.klasse) setClassFilter(data.klasse) }
 
@@ -232,10 +250,10 @@ export default function AdminPage() {
       <main className="main-content" style={S.main}>
         {userRole === 'admin' && (<div style={{ display:'flex',gap:8,marginBottom:20,flexWrap:'wrap',alignItems:'center' }}><span style={{ fontSize:12,color:T.textDim }}>Klasse:</span><button onClick={() => setClassFilter('')} style={{ ...S.filterBtn, ...(classFilter === '' ? S.filterActive : {}) }}>Alle</button>{CLASSES.map(c => <button key={c} onClick={() => setClassFilter(c)} style={{ ...S.filterBtn, ...(classFilter === c ? S.filterActive : {}) }}>{c}</button>)}</div>)}
         {userRole === 'lehrer' && (<div style={{ display:'flex',gap:8,marginBottom:20,alignItems:'center' }}><span style={{ fontSize:12,color:T.textDim }}>Klasse:</span><span style={{ ...S.filterBtn, ...S.filterActive, cursor:'default' }}>{userKlasse}</span></div>)}
-        {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, classSchoolDays, classFilter, userRole, userKlasse, manualCheckin, deleteCheckin, refresh }} />}
+        {view === 'dashboard' && <Dashboard {...{ companies: showArchived ? filtered : activeCompanies, allCompanies: companies, checkins, schoolDays, classSchoolDays, classFilter, userRole, userKlasse, customHolidays, loadCustomHolidays, manualCheckin, deleteCheckin, refresh }} />}
         {view === 'companies' && <Companies {...{ companies: (userRole === 'lehrer' ? companies.filter(c => c.klasse === userKlasse) : companies).slice().sort((a, b) => a.name.localeCompare(b.name, 'de')), allCompanies: companies, apiCompanies, showToast, userRole, userKlasse }} />}
         {view === 'export' && <ExportView {...{ companies: showArchived ? filtered : activeCompanies, checkins, classSchoolDays, classFilter, userRole, userKlasse }} />}
-        {view === 'analyse' && <AnalyseView {...{ companies, checkins, schoolDays, classSchoolDays, userRole, userKlasse }} />}
+        {view === 'analyse' && <AnalyseView {...{ companies, checkins, schoolDays, classSchoolDays, userRole, userKlasse, customHolidays }} />}
         {view === 'settings' && <Settings {...{ classSchoolDays, setClassSchoolDays, resetData, companies, userRole, userKlasse }} />}
         {archivedCompanies.length > 0 && (view === 'dashboard' || view === 'export') && (<div style={{ marginTop: 8 }}><button style={{ ...S.btnSmall, color: showArchived ? T.accent : T.textDim }} onClick={() => setShowArchived(!showArchived)}>{showArchived ? `Archiv ausblenden (${archivedCompanies.length})` : `Archiv anzeigen (${archivedCompanies.length})`}</button></div>)}
       </main>
@@ -244,13 +262,14 @@ export default function AdminPage() {
 }
 
 // ─── DASHBOARD ───
-function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolDays, classFilter, userRole, userKlasse, manualCheckin, deleteCheckin, refresh }) {
+function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolDays, classFilter, userRole, userKlasse, customHolidays, loadCustomHolidays, manualCheckin, deleteCheckin, refresh }) {
   const isMobile = useIsMobile()
   const [expandedCompany, setExpandedCompany] = useState(null)
   const [showHiddenDays, setShowHiddenDays] = useState(false)
   const [reportCompany, setReportCompany] = useState(null)
   const [reportRange, setReportRange] = useState('this_week')
   const [reportLoading, setReportLoading] = useState(false)
+  const [holidayPopup, setHolidayPopup] = useState(null) // { date }
   const scrollRef = React.useRef(null)
   const todayRef = React.useRef(null)
   const todayStr = new Date().toISOString().split('T')[0]
@@ -259,6 +278,25 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
   const effectiveClass = userRole === 'lehrer' ? userKlasse : classFilter
   const classHiddenDays = effectiveClass ? (classSchoolDays[effectiveClass] || schoolDays) : []
   const hiddenDays = [...classHiddenDays, 0, 6]
+
+  // Geltungsbereich für manuelle Feiertage: Klasse, wenn gefiltert/Lehrer, sonst 'ALL'
+  const holidayScope = effectiveClass || 'ALL'
+  const isFreeDay = (d) => isInHoliday(d) || isCustomHoliday(d, effectiveClass, customHolidays)
+
+  // Feiertag setzen/entfernen
+  const toggleHoliday = async (date) => {
+    const alreadyCustom = isCustomHoliday(date, effectiveClass, customHolidays)
+    const action = alreadyCustom ? 'remove' : 'add'
+    // Beim Entfernen: prüfen, ob in ALL oder in Klasse — wir entfernen aus beidem passend
+    let scope = holidayScope
+    if (alreadyCustom) {
+      if ((customHolidays.ALL || []).includes(date)) scope = 'ALL'
+      else if (effectiveClass && (customHolidays[effectiveClass] || []).includes(date)) scope = effectiveClass
+    }
+    await fetch('/api/custom-holidays', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, scope, date }) })
+    if (loadCustomHolidays) loadCustomHolidays()
+    setHolidayPopup(null)
+  }
 
   // Generate dates from PROJECT_START to end of CURRENT week (no future)
   const allDates = []
@@ -359,6 +397,11 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
         checkedIn={checkedIn}
         nfcCount={nfcCount}
         qrCount={qrCount}
+        effectiveClass={effectiveClass}
+        customHolidays={customHolidays}
+        toggleHoliday={toggleHoliday}
+        holidayPopup={holidayPopup}
+        setHolidayPopup={setHolidayPopup}
       />
     )
   }
@@ -366,6 +409,8 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
       {reportCompany && (<div style={S.modal} onClick={() => setReportCompany(null)}><div style={S.modalContent} onClick={e => e.stopPropagation()}><h3 style={{ ...S.h2, fontSize: 16, marginBottom: 4 }}>Fehlbericht erstellen</h3><p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>{reportCompany.code} {"\u2013"} {reportCompany.name}</p><div style={{ marginBottom: 16 }}><label style={S.label}>Zeitraum</label><select style={S.input} value={reportRange} onChange={e => setReportRange(e.target.value)}><option value="this_week">Diese Woche</option><option value="last_week">Letzte Woche</option><option value="2_weeks">Letzte 2 Wochen</option><option value="4_weeks">Letzte 4 Wochen</option><option value="all">Gesamter Zeitraum</option></select></div><p style={{ color: T.textDim, fontSize: 12, marginBottom: 16, lineHeight: 1.5 }}>Word-Datei mit allen Praktikumstagen ohne Check-in.</p><div style={{ display: 'flex', gap: 8 }}><button style={{ ...S.btnPrimary, flex: 1, opacity: reportLoading ? 0.5 : 1 }} onClick={generateReport} disabled={reportLoading}>{reportLoading ? 'Wird erstellt...' : 'Word-Datei erstellen'}</button><button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setReportCompany(null)}>Abbrechen</button></div></div></div>)}
+
+      {holidayPopup && <HolidayPopup popup={holidayPopup} effectiveClass={effectiveClass} customHolidays={customHolidays} onToggle={toggleHoliday} onClose={() => setHolidayPopup(null)} />}
 
       <div className="stats-grid" style={S.statsGrid}>
         <div className="stat-card" style={{ ...S.card, padding: 20 }}><div style={{ fontSize: 11, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>Heute eingecheckt</div><div className="stat-value" style={{ fontSize: 32, fontWeight: 700, color: T.success, fontFamily: "'Space Mono', monospace", lineHeight: 1 }}>{checkedIn}/{companies.length}</div><div style={{ fontSize: 12, color: T.textDim, marginTop: 6 }}>{companies.length - checkedIn} fehlen</div></div>
@@ -402,12 +447,14 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
                 {visibleDates.map((d, di) => {
                   const day = new Date(d + 'T12:00:00').getDay()
                   const isToday = d === todayStr
-                  const isHoliday = isInHoliday(d)
+                  const isNrwHoliday = isInHoliday(d)
+                  const isCustom = isCustomHoliday(d, effectiveClass, customHolidays)
+                  const isHoliday = isNrwHoliday || isCustom
                   const isHidden = hiddenDays.includes(day)
                   const isNewWeek = di > 0 && getWeekLabel(getMonday(new Date(d + 'T12:00:00'))) !== getWeekLabel(getMonday(new Date(visibleDates[di - 1] + 'T12:00:00')))
                   return (
-                    <th key={d} ref={isToday ? todayRef : null} data-date={d} style={{ ...S.th, textAlign: 'center', minWidth: colW, background: isToday ? T.accentDim + '33' : isHoliday ? T.warningDim + '22' : isHidden ? T.school : 'transparent', color: isToday ? T.accent : T.textDim, borderBottom: isToday ? `2px solid ${T.accent}` : undefined, borderLeft: isNewWeek ? `2px solid ${T.accent}44` : undefined }}>
-                      {WEEKDAYS[day]} {formatDate(d)}
+                    <th key={d} ref={isToday ? todayRef : null} data-date={d} onClick={() => setHolidayPopup({ date: d })} title="Klicken: Tag als Feiertag / freien Tag markieren" style={{ ...S.th, textAlign: 'center', minWidth: colW, cursor: 'pointer', background: isToday ? T.accentDim + '33' : isHoliday ? T.warningDim + '22' : isHidden ? T.school : 'transparent', color: isToday ? T.accent : isCustom ? T.warning : T.textDim, borderBottom: isToday ? `2px solid ${T.accent}` : isCustom ? `2px solid ${T.warning}` : undefined, borderLeft: isNewWeek ? `2px solid ${T.accent}44` : undefined }}>
+                      {WEEKDAYS[day]} {formatDate(d)}{isCustom ? ' \uD83C\uDFD6' : ''}
                     </th>
                   )
                 })}
@@ -425,7 +472,7 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
                       {visibleDates.map((d, di) => {
                         const day = new Date(d + 'T12:00:00').getDay()
                         const isHidden = hiddenDays.includes(day)
-                        const isHoliday = isInHoliday(d)
+                        const isHoliday = isFreeDay(d)
                         const outsideRange = (co.startDate && d < co.startDate) || (co.endDate && d > co.endDate)
                         const ci = checkins.find(c => c.companyId === co.id && c.date === d)
                         const isToday = d === todayStr
@@ -447,7 +494,7 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
                       })}
                       <td style={{ ...S.td, textAlign: 'center', verticalAlign: 'middle' }}><button onClick={(e) => { e.stopPropagation(); setReportCompany(co) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 0, color: T.textDim }} title="Fehlbericht">{"\uD83D\uDCCB"}</button></td>
                     </tr>
-                    {isExpanded && (<tr><td colSpan={visibleDates.length + 3} style={{ padding: 0 }}><CompanyStats companyId={co.id} companies={companies} checkins={checkins} schoolDays={schoolDays} classSchoolDays={classSchoolDays} /></td></tr>)}
+                    {isExpanded && (<tr><td colSpan={visibleDates.length + 3} style={{ padding: 0 }}><CompanyStats companyId={co.id} companies={companies} checkins={checkins} schoolDays={schoolDays} classSchoolDays={classSchoolDays} customHolidays={customHolidays} /></td></tr>)}
                   </React.Fragment>
                 )
               })}
@@ -459,8 +506,46 @@ function Dashboard({ companies, allCompanies, checkins, schoolDays, classSchoolD
   )
 }
 
+// ─── FEIERTAG-POPUP ───
+function HolidayPopup({ popup, effectiveClass, customHolidays, onToggle, onClose }) {
+  const d = popup.date
+  const dateObj = new Date(d + 'T12:00:00')
+  const label = `${WEEKDAYS[dateObj.getDay()]}, ${d.split('-')[2]}.${d.split('-')[1]}.${d.split('-')[0]}`
+  const isNrw = isInHoliday(d)
+  const isCustom = isCustomHoliday(d, effectiveClass, customHolidays)
+  const scopeLabel = effectiveClass ? `Klasse ${effectiveClass}` : 'alle Klassen'
+  return (
+    <div style={S.modal} onClick={onClose}>
+      <div style={S.modalContent} onClick={e => e.stopPropagation()}>
+        <h3 style={{ ...S.h2, fontSize: 16, marginBottom: 4 }}>Feiertag / freier Tag</h3>
+        <p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>{label}</p>
+        {isNrw ? (
+          <p style={{ color: T.textDim, fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
+            Dieser Tag liegt bereits in den NRW-Schulferien ({getHolidayName(d)}) und z&auml;hlt automatisch nicht als Fehltag.
+          </p>
+        ) : (
+          <p style={{ color: T.textDim, fontSize: 12, marginBottom: 16, lineHeight: 1.5 }}>
+            Die Markierung gilt f&uuml;r <strong style={{ color: T.text }}>{scopeLabel}</strong>. Ein markierter Tag wird nicht mehr als Fehltag gewertet (Dashboard, Fehlbericht, Statistik, Export).
+          </p>
+        )}
+        {!isNrw && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            {isCustom ? (
+              <button style={{ ...S.btnPrimary, flex: 1, background: T.warning, color: T.bg }} onClick={() => onToggle(d)}>Markierung entfernen</button>
+            ) : (
+              <button style={{ ...S.btnPrimary, flex: 1 }} onClick={() => onToggle(d)}>Als freien Tag markieren</button>
+            )}
+            <button style={{ ...S.btnGhost, flex: 1 }} onClick={onClose}>Abbrechen</button>
+          </div>
+        )}
+        {isNrw && <button style={{ ...S.btnGhost, width: '100%' }} onClick={onClose}>Schlie&szlig;en</button>}
+      </div>
+    </div>
+  )
+}
+
 // ─── DASHBOARD MOBILE (Tagesansicht) ───
-function DashboardMobile({ companies, checkins, classSchoolDays, manualCheckin, deleteCheckin, setReportCompany, reportCompany, reportRange, setReportRange, reportLoading, generateReport, checkedIn, nfcCount, qrCount }) {
+function DashboardMobile({ companies, checkins, classSchoolDays, manualCheckin, deleteCheckin, setReportCompany, reportCompany, reportRange, setReportRange, reportLoading, generateReport, checkedIn, nfcCount, qrCount, effectiveClass, customHolidays, toggleHoliday, holidayPopup, setHolidayPopup }) {
   const [day, setDay] = useState(new Date())
   const dayStr = fmtDateStr(day)
   const todayStr = fmtDateStr(new Date())
@@ -480,12 +565,16 @@ function DashboardMobile({ companies, checkins, classSchoolDays, manualCheckin, 
     return true
   })
 
-  const isHoliday = isInHoliday(dayStr)
+  const isNrwHoliday = isInHoliday(dayStr)
+  const isCustom = isCustomHoliday(dayStr, effectiveClass, customHolidays)
+  const isHoliday = isNrwHoliday || isCustom
   const isWeekend = day.getDay() === 0 || day.getDay() === 6
 
   return (
     <div style={{ animation: 'fadeIn .3s ease' }}>
       {reportCompany && (<div style={S.modal} onClick={() => setReportCompany(null)}><div style={S.modalContent} onClick={e => e.stopPropagation()}><h3 style={{ ...S.h2, fontSize: 16, marginBottom: 4 }}>Fehlbericht erstellen</h3><p style={{ color: T.textMuted, fontSize: 13, marginBottom: 16 }}>{reportCompany.code} {"\u2013"} {reportCompany.name}</p><div style={{ marginBottom: 16 }}><label style={S.label}>Zeitraum</label><select style={S.input} value={reportRange} onChange={e => setReportRange(e.target.value)}><option value="this_week">Diese Woche</option><option value="last_week">Letzte Woche</option><option value="2_weeks">Letzte 2 Wochen</option><option value="4_weeks">Letzte 4 Wochen</option><option value="all">Gesamter Zeitraum</option></select></div><div style={{ display: 'flex', gap: 8 }}><button style={{ ...S.btnPrimary, flex: 1, opacity: reportLoading ? 0.5 : 1 }} onClick={generateReport} disabled={reportLoading}>{reportLoading ? 'Wird erstellt...' : 'Word-Datei erstellen'}</button><button style={{ ...S.btnGhost, flex: 1 }} onClick={() => setReportCompany(null)}>Abbrechen</button></div></div></div>)}
+
+      {holidayPopup && <HolidayPopup popup={holidayPopup} effectiveClass={effectiveClass} customHolidays={customHolidays} onToggle={toggleHoliday} onClose={() => setHolidayPopup(null)} />}
 
       {/* Stats kompakt */}
       <div style={{ ...S.card, padding: 14, marginBottom: 12, display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
@@ -498,13 +587,16 @@ function DashboardMobile({ companies, checkins, classSchoolDays, manualCheckin, 
       <div style={{ ...S.card, padding: 12, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <button style={{ ...S.btnSmall, fontSize: 18, padding: '6px 14px' }} onClick={() => shift(-1)}>{"\u25C0"}</button>
         <div style={{ textAlign: 'center', flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: isToday ? T.accent : T.text }}>{dayLabel}</div>
+          <div onClick={() => setHolidayPopup({ date: dayStr })} style={{ fontSize: 14, fontWeight: 700, color: isToday ? T.accent : isCustom ? T.warning : T.text, cursor: 'pointer' }}>{dayLabel}{isCustom ? ' \uD83C\uDFD6' : ''}</div>
           {!isToday && <button style={{ ...S.btnSmall, marginTop: 6, color: T.accent, borderColor: T.accent }} onClick={goToday}>Heute</button>}
         </div>
         <button style={{ ...S.btnSmall, fontSize: 18, padding: '6px 14px' }} onClick={() => shift(1)}>{"\u25B6"}</button>
       </div>
 
-      {isHoliday && <div style={{ ...S.card, padding: 14, marginBottom: 12, textAlign: 'center', color: T.warning, background: T.warningDim + '22', borderColor: T.warning + '44' }}>{"\uD83C\uDFD6"} {getHolidayName(dayStr)}</div>}
+      <div style={{ textAlign: 'center', marginBottom: 12, marginTop: -4 }}><button style={{ ...S.btnSmall, fontSize: 11 }} onClick={() => setHolidayPopup({ date: dayStr })}>{"\uD83C\uDFD6"} Tag als freien Tag markieren</button></div>
+
+      {isNrwHoliday && <div style={{ ...S.card, padding: 14, marginBottom: 12, textAlign: 'center', color: T.warning, background: T.warningDim + '22', borderColor: T.warning + '44' }}>{"\uD83C\uDFD6"} {getHolidayName(dayStr)}</div>}
+      {isCustom && !isNrwHoliday && <div style={{ ...S.card, padding: 14, marginBottom: 12, textAlign: 'center', color: T.warning, background: T.warningDim + '22', borderColor: T.warning + '44' }}>{"\uD83C\uDFD6"} Freier Tag / Feiertag</div>}
       {isWeekend && <div style={{ ...S.card, padding: 14, marginBottom: 12, textAlign: 'center', color: T.textDim }}>Wochenende</div>}
 
       {/* Betriebsliste */}
@@ -513,11 +605,11 @@ function DashboardMobile({ companies, checkins, classSchoolDays, manualCheckin, 
           <div style={{ ...S.card, padding: 20, textAlign: 'center', color: T.textDim }}>Keine Praktikumstage f&uuml;r diesen Tag</div>
         ) : visible.map(co => {
           const ci = dayCI.find(c => c.companyId === co.id)
-          const status = ci ? (ci.nfcVerified ? 'nfc' : 'qr') : (dayStr <= todayStr ? 'missing' : 'pending')
+          const status = ci ? (ci.nfcVerified ? 'nfc' : 'qr') : (isHoliday ? 'free' : (dayStr <= todayStr ? 'missing' : 'pending'))
           const statusBg = status === 'nfc' ? T.successDim : status === 'qr' ? T.warningDim : status === 'missing' ? T.dangerDim : T.surfaceLight
           const statusCol = status === 'nfc' ? T.success : status === 'qr' ? T.warning : status === 'missing' ? T.danger : T.textDim
-          const statusIcon = status === 'nfc' ? '\u2713' : status === 'qr' ? '\u26A0' : status === 'missing' ? '\u2717' : '\u2013'
-          const statusText = status === 'nfc' ? 'NFC' : status === 'qr' ? 'QR' : status === 'missing' ? 'fehlt' : 'offen'
+          const statusIcon = status === 'nfc' ? '\u2713' : status === 'qr' ? '\u26A0' : status === 'missing' ? '\u2717' : status === 'free' ? '\uD83C\uDFD6' : '\u2013'
+          const statusText = status === 'nfc' ? 'NFC' : status === 'qr' ? 'QR' : status === 'missing' ? 'fehlt' : status === 'free' ? 'frei' : 'offen'
           return (
             <div key={co.id} style={{ ...S.card, padding: 14, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -548,7 +640,7 @@ function DashboardMobile({ companies, checkins, classSchoolDays, manualCheckin, 
 }
 
 // ─── COMPANY STATS ───
-function CompanyStats({ companyId, companies, checkins, schoolDays, classSchoolDays }) {
+function CompanyStats({ companyId, companies, checkins, schoolDays, classSchoolDays, customHolidays }) {
   const company = companies.find(c => c.id === companyId)
   if (!company) return null
   const companySchoolDays = (classSchoolDays && company.klasse && classSchoolDays[company.klasse]) || schoolDays
@@ -563,7 +655,8 @@ function CompanyStats({ companyId, companies, checkins, schoolDays, classSchoolD
   let totalPracticeDays = 0, attendedPracticeDays = 0
   const startDate = new Date(companyStart + 'T12:00:00')
   const effectiveEnd = companyEnd < todayStr ? companyEnd : todayStr
-  for (let d = new Date(startDate); ; d.setDate(d.getDate() + 1)) { const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); if (ds > effectiveEnd) break; if (isInHoliday(ds)) continue; if (practiceDays.includes(d.getDay())) { totalPracticeDays++; if (companyCheckins.some(c => c.date === ds)) attendedPracticeDays++ } }
+  const isFree = (ds) => isInHoliday(ds) || isCustomHoliday(ds, company.klasse, customHolidays)
+  for (let d = new Date(startDate); ; d.setDate(d.getDate() + 1)) { const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); if (ds > effectiveEnd) break; if (isFree(ds)) continue; if (practiceDays.includes(d.getDay())) { totalPracticeDays++; if (companyCheckins.some(c => c.date === ds)) attendedPracticeDays++ } }
   const missedDays = totalPracticeDays - attendedPracticeDays
   const attendancePercent = totalPracticeDays > 0 ? Math.round((attendedPracticeDays / totalPracticeDays) * 100) : 0
   const pieData = [{ name: 'Anwesend', value: attendedPracticeDays }, { name: 'Gefehlt', value: missedDays }].filter(d => d.value > 0)
@@ -667,7 +760,7 @@ function Companies({ companies, allCompanies, apiCompanies, showToast, userRole,
 }
 
 // ─── ANALYSE (Wochentag-Heatmap statt Badge-Liste) ───
-function AnalyseView({ companies, checkins, schoolDays, classSchoolDays, userRole, userKlasse }) {
+function AnalyseView({ companies, checkins, schoolDays, classSchoolDays, userRole, userKlasse, customHolidays }) {
   const [klasseFilter, setKlasseFilter] = useState(userRole === 'lehrer' ? userKlasse : '')
   const todayStr = new Date().toISOString().split('T')[0]
   const activeCompanies = companies.filter(c => !c.archived && (userRole !== 'lehrer' || c.klasse === userKlasse))
@@ -685,7 +778,7 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays, userRol
     for (let d = new Date(sd + 'T12:00:00'); ; d.setDate(d.getDate() + 1)) {
       const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
       if (ds > effectiveEnd) break
-      if (isInHoliday(ds)) continue
+      if (isInHoliday(ds) || isCustomHoliday(ds, co.klasse, customHolidays)) continue
       const wd = d.getDay()
       if (practiceDayNums.includes(wd)) {
         totalDays++
@@ -729,7 +822,7 @@ function AnalyseView({ companies, checkins, schoolDays, classSchoolDays, userRol
       const coSD = (classSchoolDays && co.klasse && classSchoolDays[co.klasse]) || schoolDays
       const coPractice = [1,2,3,4,5].filter(d => !coSD.includes(d))
       const sd = co.startDate || PROJECT_START; const ed = co.endDate || '2026-07-17'
-      const practiceDates = dates.filter(d => { const day = new Date(d + 'T12:00:00').getDay(); return coPractice.includes(day) && !isInHoliday(d) && d >= sd && d <= ed })
+      const practiceDates = dates.filter(d => { const day = new Date(d + 'T12:00:00').getDay(); return coPractice.includes(day) && !isInHoliday(d) && !isCustomHoliday(d, co.klasse, customHolidays) && d >= sd && d <= ed })
       possible += practiceDates.length
       actual += checkins.filter(c => c.companyId === co.id && practiceDates.includes(c.date)).length
     })
